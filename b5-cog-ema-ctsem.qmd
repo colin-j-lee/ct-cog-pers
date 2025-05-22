@@ -169,12 +169,6 @@ library(tidybayes)
 library(furrr)
 library(plyr)
 library(tidyverse)
-
-# set.seed(420)
-# 
-# load("Data/sherman_wide_person_centered.RData") # for multilevel; script 0a
-# colSums(is.na(sherman_wide_person_centered)) #not too bad
-# desc <- sherman_wide_person_centered %>% psych::describe()
 ```
 
 ## Testing
@@ -199,8 +193,9 @@ model<-ctModel(type='stanct'
             , time          = "time" )
 
 model$pars$indvarying[7:14] <- TRUE #drift and diffusion
-model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10"
-model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10"
+model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10" #drift
+model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10" #diffusion
+model$pars$transform[21:22] <- "1*param" #CINT
 
 model$pars
 
