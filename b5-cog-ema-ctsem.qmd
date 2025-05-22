@@ -1,0 +1,370 @@
+---
+title: "Big Five-Cog ctsem"
+format: html
+editor: source
+editor_options: 
+  chunk_output_type: console
+---
+
+# Workspace
+
+## Packages
+
+```{r}
+library(psych)
+library(plyr)
+library(tidyverse)
+
+```
+
+```{r}
+sc_df <- read_csv("Data/ema_wide_clean_data_W1_2025-04-30.csv") 
+colnames(sc_df)
+```
+
+# EMA Data 
+
+1. Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
+2. Create StartDate and HourBlock
+```{r}
+sc_df <- sc_df %>%
+  group_by(SID) %>%
+  mutate(StartDate = min(Date)) %>%
+  ungroup() %>%
+  select(SID:interrupt, StartDate, everything())
+```
+
+
+## Big Five States 
+
+```{r}
+pp_cb <- readxl::read_excel("Codebooks/01-codebook.xlsx", sheet = "codebook")
+b5_items <- pp_cb %>% filter(Inventory == "BFI-2") %>% pull(old)
+# sc_df <- sc_df %>%
+#   #rename(N05 = N5) %>%
+#   select(SID, Date = Date_main, session:HourBlock, interrupt, all_of(b5_items)) %>%
+#   pivot_longer(
+#     cols = all_of(b5_items)
+#     , values_to = "value"
+#     , names_to = "old"
+#     , values_drop_na = T
+#   ) %>%
+#   left_join(pp_cb %>% select(old, shortFacet, Reverse)) %>%
+#   mutate(value = ifelse(Reverse == "yes", 6 - value, value)) %>%
+#   separate(old, c("trait", "item"), sep = -2) %>%
+#   group_by(SID, Date, StartDate, Day, Hour, HourBlock, session, interrupt, trait, shortFacet) %>%
+#   summarize(value = mean(value, na.rm = T)) %>% 
+#   ungroup()
+
+#pomp <- function(x, mini = 1, maxi = 5) (x - mini)/(maxi - mini)*100
+
+sc_b5 <- sc_df %>% 
+  group_by(SID, Date, StartDate, Day, Hour, HourBlock, session,  interrupt, trait) %>% 
+  summarize(value = mean(value, na.rm = T)) %>% 
+  ungroup() %>%
+  pivot_wider(
+    names_from = "trait"
+    , values_from = "value"
+    ) %>%
+  full_join(
+    sc_b5 %>%
+      pivot_wider(
+        names_from = c("trait", "shortFacet")
+        , values_from = "value"
+        )
+  ) #%>% 
+  # mutate_at(vars(A:N_emoVol), pomp)
+```
+
+## Cognitive States 
+
+```{r}
+#pomp_obs <- function(x) (x - min(x, na.rm = T))/(max(x, na.rm = T)-min(x, na.rm = T))*100
+# sc_cog <- sc_df %>% 
+#   select(
+#     SID, Date = Date_main, session:HourBlock, interrupt, 
+#          , nback_score, vpa_score, dsm_score
+#          , nback_medianRTc, vpa_medianRTc, dsm_medianRTc
+#          ) %>%
+  # mutate_at(vars(nback_score, vpa_score, dsm_score), pomp_obs) %>%
+  # rowwise() %>%
+  # mutate(cog_comp = mean(c_across(nback_score:dsm_score), na.rm = T)) %>%
+  ungroup() 
+
+sc_b5cog <- sc_b5 %>%
+  inner_join(
+    sc_cog 
+    ) %>%
+  select(-StartDate, -HourBlock) %>%
+  arrange(SID, Date) %>%
+  group_by(SID) %>%
+  mutate(
+    beep = 1:n()
+    , beep_wpc = beep - median(beep)
+    , dec_time = hour(Date) + minute(Date)/60 + second(Date)/60/60
+    , dec_time_c = dec_time - 12
+  )
+save(sc_b5cog, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-ema-%s.RData", Sys.Date()))
+write_csv(sc_b5cog, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-ema-%s.csv", Sys.Date()))
+```
+
+
+```{r}
+set.seed(420)
+sc_cog %>%
+  group_by(SID) %>%
+  filter(n() > 40) %>%
+  ungroup() %>%
+  filter(SID %in% sample(unique(.$SID), 20)) %>%
+  ggplot(aes(x = session, y = dsm_score)) + 
+    geom_line() + 
+    geom_point() + 
+    geom_smooth() + 
+    facet_wrap(~SID, nrow = 4) + 
+    theme_bw()
+  
+```
+
+# Baseline Data 
+## Big Five Traits  
+
+```{r}
+bl_df <- read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>%
+  select(
+    SID, StartDate = date
+    , starts_with("demo_eth"),
+    , demo_gender, demo_gender_TEXT = demo_gender_3_TEXT, demo_hispanic
+    , demo_orientation, demo_orientation_TEXT = demo_orientation_4_TEXT
+    , demo_YOB, demo_age
+    , demo_education
+    , demo_income
+    , demo_relationship 
+    # , demo_livingSituation
+    # , demo_employment 
+    # , demo_mom_edu, demo_dad_edu
+    , starts_with("BFI")
+    # , health_physAct = `health-physAct` 
+    # , health_smoke = `health-smoke`
+    # , health_height = `health-height`, health_weight = `health-weight`
+    # , health_cholesterol = `health-CC_1`
+    # , health_hypertension = `health-CC_2`
+    # , health_diabetes = `health-CC_3`
+    # , health_depression = `health-CC_4`
+    # , health_tbi = `health-CC_5`
+    # , health_heartDis = `health-CC_6`
+    # , health_renal = `health-CC_7`
+    # , starts_with("sud")
+    ) %>%
+  filter(!is.na(SID))
+write_csv(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.csv", Sys.Date()))
+save(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.RData", Sys.Date()))
+```
+
+## Ctsem shite
+
+```{r, include = FALSE}
+library(rstan)
+library(ctsem)
+library(tidybayes)
+library(furrr)
+library(plyr)
+library(tidyverse)
+
+# set.seed(420)
+# 
+# load("Data/sherman_wide_person_centered.RData") # for multilevel; script 0a
+# colSums(is.na(sherman_wide_person_centered)) #not too bad
+# desc <- sherman_wide_person_centered %>% psych::describe()
+```
+
+## Testing
+
+simple ass test
+
+```{r}
+model<-ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("E", "vpa_score")
+            , n.manifest = 2, manifestNames = c("E", "vpa_score")
+            , TIpredNames = c("E_baseline", "age")
+            , TDpredNames = c("interrupt", "Hour", "session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait", "mu_cog"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "id"
+            , time          = "time" )
+
+model$pars$indvarying[7:14] <- TRUE #drift and diffusion
+model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10"
+model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10"
+
+model$pars
+
+
+
+model_fit <- ctStanFit(datalong = sherman_wide_person_centered, 
+                      ctstanmodel = model,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=10
+                      # ,
+                      # optimcontrol=list(is=TRUE, 
+                      #                   finishsamples = 1000, 
+                      #                   isloopsize = 2000)
+                      )
+
+# Summary of the model
+modelsum <- summary(model_fit, digits = 4, parmatrices=TRUE)
+modelpar <- modelsum$parmatrices
+print(modelsum$parmatrices)
+
+```
+All 30 trait-cog pairs
+
+```{r}
+# Define traits and cogs
+traits <- colnames(sc_df)[4:8] #change col numbers
+cogs <- colnames(sc_df)[9:16] #change col numbers
+
+# Create all trait-cog pairs
+trait_cog_pairs <- expand_grid(trait = traits, cog = cogs)
+
+fit_bivariate_model <- function(trait, cog) {
+  message("Fitting model for:", trait, "and", cog, "\n")
+
+  tryCatch({
+    var_names <- c(trait, cog)
+
+    model <- ctModel(
+      type = 'stanct',
+      n.latent = 2,
+      latentNames = var_names,
+      n.manifest = 2,
+      manifestNames = var_names,
+      LAMBDA = diag(2),
+      
+      TDpred
+      
+      MANIFESTMEANS = 0,
+
+      CINT = matrix(c(
+        paste0("mu_", trait),
+        paste0("mu_", cog)
+      ), nrow = 2),
+
+      DRIFT = matrix(c(
+        paste0("beta_", trait),
+        paste0("beta_", trait, "_on_", cog),
+        paste0("beta_", cog, "_on_", trait),
+        paste0("beta_", cog)
+      ), nrow = 2, byrow = TRUE),
+
+      MANIFESTVAR = matrix(c(
+        paste0("mv_", trait), 0,
+        0, paste0("mv_", cog)), 
+        nrow = 2, byrow = TRUE),
+
+      DIFFUSION = matrix(c(
+        paste0("diff_", trait), 0,
+        0, #lower diagonal f's stuff up
+        paste0("diff_", cog)
+      ), nrow = 2, byrow = TRUE),
+
+      T0VAR = matrix(c(
+        paste0("t0var_", trait), 0,
+        0, paste0("t0var_", cog)), 
+        nrow = 2, byrow = TRUE),
+
+      id = "id",
+      time = "time"
+    )
+
+    model$pars$indvarying[7:14] <- TRUE #drift and diffusion
+    
+    #make diffusion variances reasonable
+    model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10"
+    model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10"
+
+    data_sub <- sherman_wide_person_centered %>%
+      select(id, time, all_of(c(trait, cog)))
+
+    fit <- ctStanFit(datalong = data_sub, 
+                     ctstanmodel = model, 
+                     optimize = TRUE, 
+                     priors = TRUE,
+                     cores = 2, 
+                     verbose = 1
+                     )
+
+    fit_summary <- summary(fit, digits = 4, parmatrices = TRUE)
+
+    tibble(
+      pair = paste0(trait, "_", cog),
+      model = list(model),
+      fit = list(fit),
+      summary = list(fit_summary)
+    )
+  }, error = function(e) {
+    cat("Error in model for: ", trait, "_", cog, "\n", e$message)  # Log the error
+    tibble(
+      pair = paste0(trait, "_", cog),
+      model = list(NA),
+      fit = list(NA),
+      summary = list(e$message)
+    )
+  })
+}
+
+# Parallel plan
+plan(multisession, workers = 4)
+
+# Fit all models
+ml_bivariate_results <- future_pmap_dfr(trait_cog_pairs, fit_bivariate_model, .progress = TRUE)
+#check
+# ml_bivariate_results$summary[3][[1]]$parmatrices
+
+# Save results
+save(ml_bivariate_results, file = "Data/ml_bivariate_results.RData")
+
+# Return to sequential plan
+plan(sequential)
+
+q()
+
+```
+
+Extract parameters and find out which didn't converge and reestimate
+
+Yo we good - 5/14/25
+
+```{r}
+# #load("Data/ml_bivariate_results.RData")
+# 
+# ml_bivariate_summary_t0_fixed <- ml_bivariate_results %>%
+#   select(pair, summary)
+# 
+# # Extract the parmatrices from each summary
+# ml_bivariate_parmatrices_t0_fixed <- ml_bivariate_summary_t0_fixed %>%
+#   mutate(parmatrices = map(summary, ~ .x$parmatrices)) %>%
+#   select(pair, parmatrices)
+# 
+# #Are any estimates hella big; this is  indicative of poor model convergence and I can separately estimate them
+# 
+# par_check_t0_fixed <- ml_bivariate_parmatrices_t0_fixed %>%
+#   mutate(any_mean_gt_20 = map_lgl(parmatrices, ~ any(.x$Mean > 20, na.rm = TRUE)))
+# 
+# par_large_means_t0_fixed <- par_check_t0_fixed %>%
+#   filter(any_mean_gt_20) %>%
+#   mutate(high_mean_rows = map(parmatrices, ~ filter(.x, Mean > 20)))
+# 
+# par_large_unnest_t0_fixed <- par_large_means_t0_fixed %>% unnest(high_mean_rows) %>%
+#   mutate(Mean = round(Mean, 3))
+# 
+# #im so fuckin happy
+```
+
+
