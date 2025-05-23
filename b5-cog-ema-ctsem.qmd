@@ -3,35 +3,88 @@ title: "Big Five-Cog ctsem"
 format: html
 editor: source
 editor_options: 
-  chunk_output_type: console
+  chunk_output_type: inline
 ---
 
-# Workspace
+#Notes:
 
+
+- Evan renaming and deleting superfluous code
+- Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
+- Add imputation
+- Add Tipred
+- And TD pred
+- Addition: need to merge with baseline data
+
+Sections: 
+- Housekeeping
+- Getting the Data
+- Data Formatting
+- Imputation
+- R0: 
+  * Descriptives
+  * Reliabilities 
+- R1+2 (Models)
+- Plots
+
+More notes: 
+Imputation section
+Descriptives (reliabilities, means, sd, corr matrices, baseline descriptives)
+Reliabilities via EW’s function as a first pass. Use omega (use multilevel omega c.f. Colin)
+Run models
+Kable tables
+Plots
+Impulse response, vector fields
+
+# Housekeeping
 ## Packages
 
 ```{r}
 library(psych)
-library(plyr)
+#library(plyr)
 library(tidyverse)
-
+#library(ctsem)
 ```
 
+## Getting the data
 ```{r}
-sc_df <- read_csv("Data/ema_wide_clean_data_W1_2025-04-30.csv") 
-colnames(sc_df)
+#uncomment one of these lines to set your own working directory
+#also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
+setwd('~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+#setwd('<Colin's Pathstring Goes Here') 
+
+```
+### Ema Data
+```{r}
+ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv") 
+colnames(ema_df)
+head(ema_df)
+```
+### Baseline Data
+```{r}
+baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") 
+colnames(baseline_df)
+head(baseline_df)
 ```
 
-# EMA Data 
+# Data Processing
+## EMA Data 
 
 1. Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
 2. Create StartDate and HourBlock
 ```{r}
-sc_df <- sc_df %>%
-  group_by(SID) %>%
-  mutate(StartDate = min(Date)) %>%
-  ungroup() %>%
-  select(SID:interrupt, StartDate, everything())
+
+ema_df = ema_df |> 
+  rename(DateTime=Date) |> #First, make the column more informative
+  select(-c(A:N_emoVol)) |> #these are averages of observed values, but we should impute first and then form the averages. 
+  group_by(SID) |> 
+  mutate(StartDateTime = min(DateTime)) |>  #get the start date for each participant
+  ungroup() |> 
+  group_by(SID,Day) |> 
+  mutate(DailySessionNumber = dense_rank(Hour)) |> 
+  ungroup()  #something about inconsistent capitalization in the column names
+
+ema_df |> head()
 ```
 
 
