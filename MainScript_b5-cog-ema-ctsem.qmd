@@ -6,9 +6,7 @@ editor_options:
   chunk_output_type: inline
 ---
 
-#Notes:
-
-
+#Working Notes: 
 - Evan renaming and deleting superfluous code (work in progress)
 - Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name) ✓
 - Add imputation✓
@@ -23,18 +21,14 @@ Sections:
 - Imputation
 - R0: 
   * Descriptives
-  * Reliabilities 
+  * Reliabilities  
+  * (reliabilities, means, sd, corr matrices, baseline descriptives).
+  * Use omega (use multilevel omega c.f. Colin)
+  * Use Evan's function?
 - R1+2 (Models)
 - Plots
+  * Impulse response, vector fields
 
-More notes: 
-Imputation section
-Descriptives (reliabilities, means, sd, corr matrices, baseline descriptives)
-Reliabilities via EW’s function as a first pass. Use omega (use multilevel omega c.f. Colin)
-Run models
-Kable tables
-Plots
-Impulse response, vector fields
 
 # Housekeeping
 ## Packages
@@ -102,6 +96,7 @@ Facets = list(
 #sanity check: the correlation matrix checks out:
 ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
+
 ```{r}
 library(mice)
 ImputedFacets= mice(ema_df |> select(unname(unlist(Facets))),
@@ -125,11 +120,13 @@ ema_df = ema_df |>
   bind_cols(
     map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE))
     #map_dfc stands for "map data frame column-bind"
-    #for each element in facets (i.e. the vector of the column-name-strings), this gets those columns in ema_df, and takes the row means
+    #for each element in Facets (i.e. for each vector of column-name-strings), this gets those columns in ema_df, and takes the row means
   )
 ema_df 
 ```
 
+## R0 Descriptives
+### Visualizing a random sample
 ```{r}
 ema_df |>  group_by(SID) %>%
   filter(n() > 40) %>%
@@ -149,7 +146,7 @@ ema_df |>  group_by(SID) %>%
 
 
 
-
+##Code Emorie used to pull the data?
 
 ```{r}
 pp_cb <- readxl::read_excel("Codebooks/01-codebook.xlsx", sheet = "codebook")
