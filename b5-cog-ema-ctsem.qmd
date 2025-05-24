@@ -9,12 +9,12 @@ editor_options:
 #Notes:
 
 
-- Evan renaming and deleting superfluous code
-- Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
-- Add imputation
-- Add Tipred
-- And TD pred
-- Addition: need to merge with baseline data
+- Evan renaming and deleting superfluous code (work in progress)
+- Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name) ✓
+- Add imputation✓
+- Add Time Invariant Predictors 
+- And Time Dependent Predictors
+- need to merge with baseline data
 
 Sections: 
 - Housekeeping
@@ -50,8 +50,9 @@ library(tidyverse)
 ```{r}
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
-setwd('~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-#setwd('<Colin's Pathstring Goes Here') 
+
+knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog')#this is for EW's machine
+#knitr::opts_knit$set(root.dir = 'ColinsPathStringGoesHere')
 
 ```
 ### Ema Data
@@ -74,21 +75,81 @@ head(baseline_df)
 2. Create StartDate and HourBlock
 ```{r}
 
-ema_df = ema_df |> 
-  rename(DateTime=Date) |> #First, make the column more informative
-  select(-c(A:N_emoVol)) |> #these are averages of observed values, but we should impute first and then form the averages. 
+ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informative
+  select(-c(A:O)) |> #these are averages of observed values, but we should impute first and then form the averages. 
+  select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
   group_by(SID) |> 
-  mutate(StartDateTime = min(DateTime)) |>  #get the start date for each participant
+  mutate(StartDate = min(format(DateTime,'%Y:%m:%d'))) |>  #get the start date for each participant
   ungroup() |> 
   group_by(SID,Day) |> 
-  mutate(DailySessionNumber = dense_rank(Hour)) |> 
+  mutate(DailySessionNumber = dense_rank(Hour),
+         DailyStartTime = min(format(DateTime,"%H:%M:%S"))) |> 
   ungroup()  #something about inconsistent capitalization in the column names
 
-ema_df |> head()
+ema_df |> head() |> colnames()
 ```
 
 
-## Big Five States 
+# Imputation of  Big Five Facets
+```{r}
+Facets = list(
+      Extra=c("E_assert","E_scblty","E_enerLev"),
+      Agree=c("A_cmpn","A_rspct","A_trust"),
+      Consci = c("C_org","C_prdctv","C_rspnsbl"),
+      Neuro = c("N_anx","N_dep","N_emoVol"),
+      Open = c("O_aesSens","O_crtvImag","O_intCur"))
+
+#sanity check: the correlation matrix checks out:
+ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
+```
+```{r}
+library(mice)
+ImputedFacets= mice(ema_df |> select(unname(unlist(Facets))),
+                    m=1,
+                    maxit=50,
+                    method='pmm',
+                    seed=500)
+ema_dfi = complete(ImputedFacets) #ema_dfi ==> ema_DataFrameImputed
+colnames(ema_dfi) = unname(unlist(Facets))
+
+ema_df = ema_df |> 
+  select(-unname(unlist(Facets))) |> #delete the original columns
+  bind_cols(ema_dfi)
+ema_df
+
+```
+### Creating Domain Scores
+```{r}
+
+ema_df = ema_df |> 
+  bind_cols(
+    map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE))
+    #map_dfc stands for "map data frame column-bind"
+    #for each element in facets (i.e. the vector of the column-name-strings), this gets those columns in ema_df, and takes the row means
+  )
+ema_df 
+```
+
+```{r}
+ema_df |>  group_by(SID) %>%
+  filter(n() > 40) %>%
+  ungroup() %>%
+  filter(SID %in% sample(unique(.$SID), 20)) %>%
+  ggplot(aes(x = session, y = dsm_score)) + 
+    geom_line() + 
+    geom_point() + 
+    geom_smooth() + 
+    facet_wrap(~SID, nrow = 4) + 
+    theme_bw()
+```
+
+
+
+# OLDER STUFF
+
+
+
+
 
 ```{r}
 pp_cb <- readxl::read_excel("Codebooks/01-codebook.xlsx", sheet = "codebook")
