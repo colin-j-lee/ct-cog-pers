@@ -2,42 +2,123 @@
 title: "Big Five-Cog ctsem"
 format: html
 editor: source
+  markdown: 
+    wrap: 72
 editor_options: 
   chunk_output_type: inline
 ---
 
-#Working Notes: 
-- Evan renaming and deleting superfluous code (work in progress)
-- Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name) ✓
-- Add imputation✓
-- Add Time Invariant Predictors 
-- And Time Dependent Predictors
-- need to merge with baseline data
+### Working Notes:
 
-Sections: 
-- Housekeeping
-- Getting the Data
-- Data Formatting
-- Imputation
-- R0: 
-  * Descriptives
-  * Reliabilities  
-  * (reliabilities, means, sd, corr matrices, baseline descriptives).
-  * Use omega (use multilevel omega c.f. Colin)
-  * Use Evan's function?
-- R1+2 (Models)
-- Plots
-  * Impulse response, vector fields
+-   [ ] Evan renaming and deleting superfluous code (work in progress)
+-   [ ] Data Processing: figure out a strategy for the 'presentation names' of variables. Do we just rename E_scblty to Sociability and keep track of the E=>Soci. mapping? Or do we swap them out prior to making the tables?
+-   [x] Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
+-   [x] Add imputation (at least linear MICE imputation. What about MIDAS imputation? )
+-   [ ] Add Time Invariant Predictors
+-   [ ] And Time Dependent Predictors
+-   [ ] need to merge with baseline data
 
+Sections:
+
+1.  Housekeeping
+2.  Getting the Data
+3.  Data Formatting
+4.  Imputation
+5.  R0 (Descriptives, Reliabilities)
+    a.  reliabilities, means, sd, corr matrices, baseline descriptives).
+    b.  Use omega (use multilevel omega c.f. Colin)
+    c.  Use Evan's descriptives function?
+6.  R1+2 (Models)
+7.  Plots: Impulse response, vector fields
 
 # Housekeeping
+
+
 ## Packages
 
 ```{r}
 library(psych)
 #library(plyr)
-library(tidyverse)
+library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
+#library(rMIDAS)
 #library(ctsem)
+library(tidyverse)
+library(stringr)
+library(flextable)
+library(officer)
+#library(future)
+#availableCores()
+#plan(multisession, workers = availableCores() - 1)
+#nbrOfWorkers()
+```
+
+## Current Date String
+
+```{r}
+#to be used for saving plots and tables. if we re-run the pipeline, we just need to be sure we are using the latest dated material.
+#the only time this gets slightly tricky is when loading things back in to the pipeline, but we can make a note of that 
+CurrentDateString = gsub("\\-", "_",Sys.Date())#replace the dashes with underscores
+CurrentDateString
+```
+
+## Custom Functions
+
+```{r}
+FormatTableToWord = function(Table,OutputFileName) {
+  #Initially authored by E.W.
+  
+  #This formats a table according to basic APA standards, saves it to ms word.
+  # in theory, all one has to do is copy and paste into the new document
+  #... with less fiddling than would be required by kable()
+  #If there is a super complicated custom header structure, kable might be better...
+  warning('library(officer)')
+  warning('library(flextable)')
+  
+  big_black_border   <- fp_border(color = "black", width = 2)
+  thin_black_border  <- fp_border(color = "black", width = 1)
+  light_grey_border  <- fp_border(color = "gray90", width = 1)
+  
+  my_paragraph = fp_par(
+  text.align = 'center',
+  padding.top = 1,
+  padding.bottom=1,
+  padding.left = 2,
+  padding.right = 2,
+  line_spacing = 1
+  )
+  
+  APATable <- flextable(Table)  |> 
+              theme_vanilla() |>
+              font(fontname = "Times New Roman", part = "all") |>
+              fontsize(size = 12, part = "all") |> 
+              bold(part = "header") |> 
+              # Remove all existing borders
+              border_remove() |> 
+              # Add thick border at top of header
+              hline_top(part = "header", border = big_black_border) |> 
+              hline_bottom(part = "header", border = thin_black_border) |> 
+              hline_bottom(part = "body",   border = big_black_border) |> 
+              #  Add faint vertical lines (for seeing columns in Word)
+              vline(border = light_grey_border, part = "all") |> 
+              # ^^ THESE WILL NEED TO BE REMOVED, but are good for fiddling with widths
+              set_table_properties(layout = "autofit") |> 
+              # Auto-fit column widths for a nice starting point
+              autofit() |> 
+              #add in styling from above to make everything single spaced with minimal padding
+              style(pr_p =   my_paragraph, part = "all")
+  
+  OutputDoc = read_docx()
+
+  # Add the flextable to the document
+  OutputDoc = body_add_flextable(OutputDoc, APATable)
+
+# Save the document
+  print(OutputDoc, target = OutputFileName)
+  print(paste0('Table Saved as: ',OutputFileName))
+  print(paste0("Table Saved to: ", getwd()))
+  warning("To remove the vertical borders, go to table design/line styles, select 'no border' and then you have a border eraser")
+}
+
 ```
 
 ## Getting the data
@@ -45,17 +126,21 @@ library(tidyverse)
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog')#this is for EW's machine
-#knitr::opts_knit$set(root.dir = 'ColinsPathStringGoesHere')
+knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+#knitr::opts_knit$set(root.dir = '<ColinsPathStringGoesHere>')
 
 ```
+
 ### Ema Data
+
 ```{r}
 ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv") 
 colnames(ema_df)
 head(ema_df)
 ```
+
 ### Baseline Data
+
 ```{r}
 baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") 
 colnames(baseline_df)
@@ -63,12 +148,13 @@ head(baseline_df)
 ```
 
 # Data Processing
-## EMA Data 
 
-1. Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
-2. Create StartDate and HourBlock
+## EMA Data
+
+1.  Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
+2.  Create StartDate and HourBlock
+
 ```{r}
-
 ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informative
   select(-c(A:O)) |> #these are averages of observed values, but we should impute first and then form the averages. 
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
@@ -80,11 +166,14 @@ ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informa
          DailyStartTime = min(format(DateTime,"%H:%M:%S"))) |> 
   ungroup()  #something about inconsistent capitalization in the column names
 
+ema_df =  ema_df  |> 
+  rename_with(~ str_replace(.x, "^.", ~ toupper(.x)))
+
 ema_df |> head() |> colnames()
 ```
 
+# Imputation of Big Five Facets
 
-# Imputation of  Big Five Facets
 ```{r}
 Facets = list(
       Extra=c("E_assert","E_scblty","E_enerLev"),
@@ -98,41 +187,51 @@ ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> 
 ```
 
 ```{r}
-library(mice)
-ImputedFacets= mice(ema_df |> select(unname(unlist(Facets))),
+#details on mice: https://github.com/amices/mice
+ImputedFacets= mice::futuremice(ema_df |> select(unname(unlist(Facets))),
                     m=1,
                     maxit=50,
-                    method='pmm',
+                    parallelseed = 42,
+                    method='pmm', #"Predictive mean matching". details: https://github.com/amices/Winnipeg
+                    #method = 'midastouch', #the documentation say that this is "weighted predictive mean matching"
+                    #we could also set method='rf' for random forest imptuation. 
                     seed=500)
 ema_dfi = complete(ImputedFacets) #ema_dfi ==> ema_DataFrameImputed
 colnames(ema_dfi) = unname(unlist(Facets))
 
 ema_df = ema_df |> 
   select(-unname(unlist(Facets))) |> #delete the original columns
-  bind_cols(ema_dfi)
+  bind_cols(ema_dfi) #glue the two dataframes together along the vertical seam
 ema_df
 
 ```
+
 ### Creating Domain Scores
+
 ```{r}
 
 ema_df = ema_df |> 
-  bind_cols(
-    map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE))
-    #map_dfc stands for "map data frame column-bind"
+  bind_cols( #glue together ema_df and whatever comes next along the vertical seam
+    map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE)) #map_dfc stands for "map data frame column-bind"
     #for each element in Facets (i.e. for each vector of column-name-strings), this gets those columns in ema_df, and takes the row means
   )
-ema_df 
+ema_df
 ```
 
+
+```{r}
+warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
+```
 ## R0 Descriptives
+
 ### Visualizing a random sample
+
 ```{r}
 ema_df |>  group_by(SID) %>%
   filter(n() > 40) %>%
   ungroup() %>%
   filter(SID %in% sample(unique(.$SID), 20)) %>%
-  ggplot(aes(x = session, y = dsm_score)) + 
+  ggplot(aes(x = Session, y = Dsm_score)) + 
     geom_line() + 
     geom_point() + 
     geom_smooth() + 
@@ -140,11 +239,75 @@ ema_df |>  group_by(SID) %>%
     theme_bw()
 ```
 
+5.  R0 (Descriptives, Reliabilities)
+    a.  reliabilities, means, sd, corr matrices, baseline descriptives).
+    b.  Use omega (use multilevel omega c.f. Colin)
+    c.  Use Evan's descriptives function?
+    
+EW note: this aren't finalized; once we get this sorted out we can either a) feed to Kable or b) feed to the Officer/Flextable function above.
+```{r}
+CurrentDateString
+warning("These are descriptives for the EMA data. I assume we do no pooling within individuals first.")
 
+BasicStatsEma = ema_df |> select(Nback_score:Dsm_medianRTc,
+                E_assert:Open) |> 
+                psych::describe() |> 
+                as.data.frame() |> #psych helpfully returns a non-dataframe object
+                select(-c(vars,trimmed,mad,skew,kurtosis,se)) |> 
+                 rownames_to_column(var = "Variable")
 
+BasicStatsEma
+```
+
+```{r}
+#now, export to word
+FormatTableToWord(BasicStatsEma,paste0("CT_CogB5_BasicStatsEMA_",CurrentDateString,".docx"))
+```
+
+```{r}
+CorrTable = ema_df |> select(Nback_score:Dsm_medianRTc,
+                E_assert:Open) |> cor(use='pairwise.complete.obs') |> round(2)
+
+warning('Need to figure out how to format this for MS Word.')
+#Option 1: Outcomes w/ Outcomes, Pers with Pers.?
+#Option 2: Break it up over multiple pages. 
+CorrTable 
+```
+```{r}
+
+#this is an old function I have from a different script.
+#omega_total <- if (ncol(subset_data) >= 3) {
+#      omega(subset_data,nfactors = NumberOfFacets, check.keys=FALSE)$omega.tot
+#    } else {
+#      NA
+#    }
+#    
+#    # Cronbach's alpha
+#    alpha_reliability <- if (ncol(subset_data) >= 2) {
+#      alpha(subset_data,check.keys=FALSE)$total$raw_alpha
+#    } else {
+#      NA
+#    }
+#    
+#    # Item-total correlations
+#    item_total_cor <- if (ncol(subset_data) >= 2) {
+#      apply(subset_data, 2, function(x) cor(x, rowSums(subset_data), use = "complete.obs"))
+#   } else {
+#      rep(NA, ncol(subset_data))
+#    }
+#    
+#    # Add omega, alpha, item-total correlations, and person_wave info to descriptives data frame
+#    descriptives <- descriptives %>%
+#      mutate(
+#        omega_total = omega_total,
+#        alpha_reliability = alpha_reliability,
+#        item_total_cor = item_total_cor,
+#        person_wave = paste0(prefix, wave)
+#      )
+#    
+
+```
 # OLDER STUFF
-
-
 
 ##Code Emorie used to pull the data?
 
@@ -187,7 +350,7 @@ sc_b5 <- sc_df %>%
   # mutate_at(vars(A:N_emoVol), pomp)
 ```
 
-## Cognitive States 
+## Cognitive States
 
 ```{r}
 #pomp_obs <- function(x) (x - min(x, na.rm = T))/(max(x, na.rm = T)-min(x, na.rm = T))*100
@@ -219,7 +382,6 @@ save(sc_b5cog, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-ema-%s.RData", Sys
 write_csv(sc_b5cog, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-ema-%s.csv", Sys.Date()))
 ```
 
-
 ```{r}
 set.seed(420)
 sc_cog %>%
@@ -236,8 +398,9 @@ sc_cog %>%
   
 ```
 
-# Baseline Data 
-## Big Five Traits  
+# Baseline Data
+
+## Big Five Traits
 
 ```{r}
 bl_df <- read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>%
@@ -329,6 +492,7 @@ modelpar <- modelsum$parmatrices
 print(modelsum$parmatrices)
 
 ```
+
 All 30 trait-cog pairs
 
 ```{r}
@@ -472,5 +636,3 @@ Yo we good - 5/14/25
 # 
 # #im so fuckin happy
 ```
-
-
