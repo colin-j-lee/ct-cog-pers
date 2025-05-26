@@ -10,6 +10,7 @@ editor_options:
 
 ### Working Notes:
 
+Checklist / ToDos
 -   [ ] Evan renaming and deleting superfluous code (work in progress)
 -   [ ] Data Processing: figure out a strategy for the 'presentation names' of variables. Do we just rename E_scblty to Sociability and keep track of the E=>Soci. mapping? Or do we swap them out prior to making the tables?
 -   [x] Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
@@ -18,18 +19,11 @@ editor_options:
 -   [ ] And Time Dependent Predictors
 -   [ ] need to merge with baseline data
 
-Sections:
-
-1.  Housekeeping
-2.  Getting the Data
-3.  Data Formatting
-4.  Imputation
-5.  R0 (Descriptives, Reliabilities)
-    a.  reliabilities, means, sd, corr matrices, baseline descriptives).
-    b.  Use omega (use multilevel omega c.f. Colin)
-    c.  Use Evan's descriptives function?
-6.  R1+2 (Models)
-7.  Plots: Impulse response, vector fields
+Notes:
+0. I've moved a lot of what was previously in this script to the bottom under "OLDER STUFF", just so we have a pipeline that we can run top to bottom. 
+1. I think we'll want to rename the facets to their full, presentation name (E_scblty to Sociability) and keep track of the facet=>domain associations in a named list. Not yet implemented. 
+2. we have options for the imputation: predictive mean matching (currently used), weighted predictive mean matching (mice) or something like rMIDAs (a neural network auto-encoder). I haven't checked the pre-reg to see wha we said.
+3. 
 
 # Housekeeping
 
