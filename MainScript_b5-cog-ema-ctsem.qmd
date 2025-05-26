@@ -20,7 +20,7 @@ Checklist / ToDos
 -   [ ] need to merge with baseline data
 
 Notes:
-0. I've moved a lot of what was previously in this script to the bottom under "OLDER STUFF", just so we have a pipeline that we can run top to bottom. 
+0. I've moved a lot of what was previously in this script to the bottom under "OLDER STUFF", just so we have a pipeline that we can run top to bottom.    
 1. I think we'll want to rename the facets to their full, presentation name (E_scblty to Sociability) and keep track of the facet=>domain associations in a named list. Not yet implemented. 
 2. we have options for the imputation: predictive mean matching (currently used), weighted predictive mean matching (mice) or something like rMIDAs (a neural network auto-encoder). I haven't checked the pre-reg to see wha we said.
 3. 
@@ -267,6 +267,7 @@ warning('Need to figure out how to format this for MS Word.')
 #Option 2: Break it up over multiple pages. 
 CorrTable 
 ```
+#PAUSED HERE (EW)
 ```{r}
 
 #this is an old function I have from a different script.
