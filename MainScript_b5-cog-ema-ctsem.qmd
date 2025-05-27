@@ -8,7 +8,7 @@ editor_options:
   chunk_output_type: inline
 ---
 
-### Working Notes:
+# Working Notes:
 
 Checklist / ToDos
 -   [ ] Evan renaming and deleting superfluous code (work in progress)
@@ -22,7 +22,7 @@ Checklist / ToDos
 Notes:
 0. I've moved a lot of what was previously in this script to the bottom under "OLDER STUFF", just so we have a pipeline that we can run top to bottom.    
 1. I think we'll want to rename the facets to their full, presentation name (E_scblty to Sociability) and keep track of the facet=>domain associations in a named list. Not yet implemented. 
-2. we have options for the imputation: predictive mean matching (currently used), weighted predictive mean matching (mice) or something like rMIDAs (a neural network auto-encoder). I haven't checked the pre-reg to see wha we said.
+2. We have options for the imputation: predictive mean matching (currently used), weighted predictive mean matching (mice) or something like rMIDAs (a neural network auto-encoder). I haven't checked the pre-reg to see wha we said.
 3. 
 
 # Housekeeping
@@ -112,7 +112,6 @@ FormatTableToWord = function(Table,OutputFileName) {
   print(paste0("Table Saved to: ", getwd()))
   warning("To remove the vertical borders, go to table design/line styles, select 'no border' and then you have a border eraser")
 }
-
 ```
 
 ## Getting the data
@@ -166,7 +165,7 @@ ema_df =  ema_df  |>
 ema_df |> head() |> colnames()
 ```
 
-# Imputation of Big Five Facets
+### Imputation of Big Five Facets
 
 ```{r}
 Facets = list(
@@ -200,10 +199,9 @@ ema_df
 
 ```
 
-### Creating Domain Scores
+### Creating Domain Scores From Facets
 
 ```{r}
-
 ema_df = ema_df |> 
   bind_cols( #glue together ema_df and whatever comes next along the vertical seam
     map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE)) #map_dfc stands for "map data frame column-bind"
@@ -216,9 +214,95 @@ ema_df
 ```{r}
 warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
 ```
-## R0 Descriptives
+## Basline Data
+### Item Reversals
+```{r}
+#do the items need to be reverse scored?
+baseline_df |> select(contains("E_")) |> cor(use='pairwise.complete.obs') |> round(2)
+#Yes they do!
+```
+```{r}
+Reversals =  list(
+  BFI_E_1 = FALSE,
+  BFI_E_2 = FALSE,
+  BFI_E_3 = TRUE,
+  BFI_E_4 = TRUE,
+  BFI_E_5 = FALSE,
+  BFI_E_6 = FALSE,
+  BFI_E_7 = TRUE,
+  BFI_E_8 = TRUE,
+  BFI_E_9 = FALSE,
+  BFI_E_10 = FALSE,
+  BFI_E_11 = TRUE,
+  BFI_E_12 = TRUE,
+  BFI_A_1 = FALSE,
+  BFI_A_2 = FALSE,
+  BFI_A_3 = TRUE,
+  BFI_A_4 = TRUE,
+  BFI_A_5 = FALSE,
+  BFI_A_6 = FALSE,
+  BFI_A_7 = TRUE,
+  BFI_A_8 = TRUE,
+  BFI_A_9 = FALSE,
+  BFI_A_10 = FALSE,
+  BFI_A_11 = TRUE,
+  BFI_A_12 = TRUE,
+  BFI_C_1 = FALSE,
+  BFI_C_2 = FALSE,
+  BFI_C_3 = TRUE,
+  BFI_C_4 = TRUE,
+  BFI_C_5 = FALSE,
+  BFI_C_6 = FALSE,
+  BFI_C_7 = TRUE,
+  BFI_C_8 = TRUE,
+  BFI_C_9 = FALSE,
+  BFI_C_10 = FALSE,
+  BFI_C_11 = TRUE,
+  BFI_C_12 = TRUE,
+  BFI_N_1 = FALSE,
+  BFI_N_2 = FALSE,
+  BFI_N_3 = TRUE,
+  BFI_N_4 = TRUE,
+  BFI_N_5 = FALSE,
+  BFI_N_6 = FALSE,
+  BFI_N_7 = TRUE,
+  BFI_N_8 = TRUE,
+  BFI_N_9 = FALSE,
+  BFI_N_10 = FALSE,
+  BFI_N_11 = TRUE,
+  BFI_N_12 = TRUE,
+  BFI_O_1 = FALSE,
+  BFI_O_2 = FALSE,
+  BFI_O_3 = TRUE,
+  BFI_O_4 = TRUE,
+  BFI_O_5 = FALSE,
+  BFI_O_6 = FALSE,
+  BFI_O_7 = TRUE,
+  BFI_O_8 = TRUE,
+  BFI_O_9 = FALSE,
+  BFI_O_10 = FALSE,
+  BFI_O_11 = TRUE,
+  BFI_O_12 = TRUE
+)
+2
+```
 
-### Visualizing a random sample
+```{r}
+ItemsToBeReversed =  names(Reversals)[unlist(Reversals)] #uses the boolean map above to select the column names which = TRUE
+
+baseline_df = baseline_df |> 
+  # 1. create *new* columns for the reversed items, suffixing them with "r"
+  mutate(across(all_of(ItemsToBeReversed),
+                ~ 6 - .x,
+                .names = "{.col}r")) %>%
+  # 2. drop the *original* (un-suffix) reversed columns
+  select(-all_of(ItemsToBeReversed ))
+
+baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
+```
+
+#Exploratory Visualization
+
 
 ```{r}
 ema_df |>  group_by(SID) %>%
@@ -268,6 +352,12 @@ warning('Need to figure out how to format this for MS Word.')
 CorrTable 
 ```
 #PAUSED HERE (EW)
+```{r}
+ema_df |> select(starts_with('E_')) |> omega(nfactors = 1)
+omega
+?omega
+
+```
 ```{r}
 
 #this is an old function I have from a different script.
