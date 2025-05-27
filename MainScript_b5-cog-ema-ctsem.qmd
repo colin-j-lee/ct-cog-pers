@@ -121,7 +121,7 @@ FormatTableToWord = function(Table,OutputFileName) {
 
 knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
 #knitr::opts_knit$set(root.dir = '<ColinsPathStringGoesHere>')
-
+#knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
