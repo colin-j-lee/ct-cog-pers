@@ -301,6 +301,11 @@ baseline_df = baseline_df |>
 baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
+#Latent Variables or Composites for Big Five Traits?
+
+```{r}
+#something like: baseline_df |> select(contains("BFI_E")) |> rowMeans() etc. 
+```
 #Exploratory Visualization
 
 
