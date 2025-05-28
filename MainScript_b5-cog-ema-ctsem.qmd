@@ -150,25 +150,47 @@ head(baseline_df)
 ```{r}
 head(ema_df)
 ```
+### Helper Function for converting time to seconds
+```{r}
+ConvertToSecondsRelativeToNoon = function(dt) {
+  h = as.numeric(format(dt, "%H"))
+  m = as.numeric(format(dt, "%M"))
+  s = as.numeric(format(dt, "%S"))
+  total_seconds = h * 3600 + m * 60 + s
+  return(total_seconds - (12 * 3600))
+}
+#testdate= ema_df |> select(Date) |> slice(10) |> pull()
+#testdate
+#ConvertToSecondsRelativeToNoon(testdate)
+#ema_df |> arrange(SID,Date) 
+```
 
 ```{r}
 
-ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informative
-  select(-c(A:O)) |> #these are averages of observed values, but we should impute first and then form the averages. 
+ema_df = ema_df |> 
+  arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
+  rename(DateTime=Date) |> #Second, make surethe column more informative, and make sue 
+  select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages. 
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
+  #Next we create two within-person, across all sessions columns:
   group_by(SID) |> 
-  mutate(StartDate = min(format(DateTime,'%Y:%m:%d'))) |>  #get the start date for each participant
+  mutate(StartDate = min(format(DateTime,'%Y:%m:%d')),#get the start date for each participant
+         BeepBoops = dense_rank(DateTime)) |> #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
   ungroup() |> 
+  #Now, for each person, for each day:
   group_by(SID,Day) |> 
   mutate(DailySessionNumber = dense_rank(Hour),
-         DailyStartTime = min(format(DateTime,"%H:%M:%S"))) |> 
-  ungroup()  #something about inconsistent capitalization in the column names
-
-ema_df =  ema_df  |> 
-  rename_with(~ str_replace(.x, "^.", ~ toupper(.x)))
-#decimal time centered noon
-#Measurement Ranking. "Beep" as dense_rank
+         DailyStartTime = min(format(DateTime,"%H:%M:%S")),
+         SecondsRelativeToNoon=ConvertToSecondsRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
+  ungroup() |> 
+  # now we ensure consistent first-letter capitalization
+  rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
+  #now we reorder the columns
+  select(SID,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
+                      everything()) 
+ema_df
 ```
+
 
 ### Imputation of Big Five Facets
 
@@ -294,7 +316,6 @@ Reversals =  list(
   BFI_O_11 = TRUE,
   BFI_O_12 = TRUE
 )
-2
 ```
 
 ```{r}
@@ -305,7 +326,7 @@ baseline_df = baseline_df |>
   mutate(across(all_of(ItemsToBeReversed),
                 ~ 6 - .x,
                 .names = "{.col}r")) %>%
-  # 2. drop the *original* (un-suffix) reversed columns
+  # 2. drop the *original* (un-suffixed) reversed columns
   select(-all_of(ItemsToBeReversed ))
 
 baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
