@@ -130,6 +130,7 @@ knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') 
 ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv") 
 colnames(ema_df)
 head(ema_df)
+#ema_df |> arrange(SID)
 ```
 
 ### Baseline Data
@@ -146,8 +147,12 @@ head(baseline_df)
 
 1.  Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
 2.  Create StartDate and HourBlock
+```{r}
+head(ema_df)
+```
 
 ```{r}
+
 ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informative
   select(-c(A:O)) |> #these are averages of observed values, but we should impute first and then form the averages. 
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
@@ -161,8 +166,8 @@ ema_df = ema_df |> rename(DateTime=Date) |> #First, make the column more informa
 
 ema_df =  ema_df  |> 
   rename_with(~ str_replace(.x, "^.", ~ toupper(.x)))
-
-ema_df |> head() |> colnames()
+#decimal time centered noon
+#Measurement Ranking. "Beep" as dense_rank
 ```
 
 ### Imputation of Big Five Facets
@@ -181,6 +186,9 @@ ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> 
 
 ```{r}
 #details on mice: https://github.com/amices/mice
+#amelia
+#Colin to Paste amelia / melia imputation here
+#
 ImputedFacets= mice::futuremice(ema_df |> select(unname(unlist(Facets))),
                     m=1,
                     maxit=50,
@@ -213,6 +221,8 @@ ema_df
 
 ```{r}
 warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
+#colin to take a look
+#emorie has code for this
 ```
 ## Basline Data
 ### Item Reversals
@@ -361,7 +371,7 @@ CorrTable
 ema_df |> select(starts_with('E_')) |> omega(nfactors = 1)
 omega
 ?omega
-
+ema_df
 ```
 ```{r}
 
