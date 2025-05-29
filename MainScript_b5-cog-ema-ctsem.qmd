@@ -32,18 +32,20 @@ Notes:
 
 ```{r}
 library(psych)
+library(kableExtra)
 #library(plyr)
-library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
+#library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
+library(Amelia) # Amelia rather than mice for continuity
 #library(rMIDAS)
 #library(ctsem)
-library(tidyverse)
 library(stringr)
-library(flextable)
 library(officer)
 #library(future)
 #availableCores()
 #plan(multisession, workers = availableCores() - 1)
 #nbrOfWorkers()
+library(tidyverse)
+
 ```
 
 ## Current Date String
@@ -119,15 +121,17 @@ FormatTableToWord = function(Table,OutputFileName) {
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-#knitr::opts_knit$set(root.dir = '<ColinsPathStringGoesHere>')
+#knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
 
 ```{r}
-ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv") 
+ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #evan
+ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #colin
+
 colnames(ema_df)
 head(ema_df)
 #ema_df |> arrange(SID)
@@ -136,7 +140,9 @@ head(ema_df)
 ### Baseline Data
 
 ```{r}
-baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") 
+baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #evan
+baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #colin
+
 colnames(baseline_df)
 head(baseline_df)
 ```
@@ -147,6 +153,7 @@ head(baseline_df)
 
 1.  Delete EACNO columns; they are the averages of observed values but we need to impute facets then calculate EACNO averages
 2.  Create StartDate and HourBlock
+3.  There are duplicate rows for some reason, the BFI and cog values are exactly the same; delete em
 ```{r}
 head(ema_df)
 ```
@@ -166,7 +173,6 @@ ConvertToSecondsRelativeToNoon = function(dt) {
 ```
 
 ```{r}
-
 ema_df = ema_df |> 
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
   rename(DateTime=Date) |> #Second, make surethe column more informative, and make sue 
@@ -189,11 +195,36 @@ ema_df = ema_df |>
   select(SID,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
                       everything()) 
 ema_df
+
+#duplicates removed
+ema_df <- ema_df[!duplicated(ema_df), ]
+
 ```
 
 
 ### Imputation of Big Five Facets
+```{r}
+ema_df_mi <- data.frame(unclass(ema_df %>% 
+                                       select(SID, BeepBoops, A_cmpn:N_emoVol)))
+#bound it
+bounds_matrix <- cbind(3:17, lower = 1, upper = 5)
 
+ema_df_mi <- amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
+  as_tibble() %>%
+  full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
+  select(-BeepBoops); ema_df_mi
+
+# look at state values post MI
+cog_pers <- ema_df_mi %>%
+  select(A_cmpn:N_emoVol)
+describe(cog_pers) 
+
+ema_df <- ema_df_mi %>%
+  select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt,
+         A_cmpn:N_emoVol)
+```
+
+## Some descriptives
 ```{r}
 Facets = list(
       Extra=c("E_assert","E_scblty","E_enerLev"),
@@ -206,26 +237,120 @@ Facets = list(
 ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
-```{r}
-#details on mice: https://github.com/amices/mice
-#amelia
-#Colin to Paste amelia / melia imputation here
-#
-ImputedFacets= mice::futuremice(ema_df |> select(unname(unlist(Facets))),
-                    m=1,
-                    maxit=50,
-                    parallelseed = 42,
-                    method='pmm', #"Predictive mean matching". details: https://github.com/amices/Winnipeg
-                    #method = 'midastouch', #the documentation say that this is "weighted predictive mean matching"
-                    #we could also set method='rf' for random forest imptuation. 
-                    seed=500)
-ema_dfi = complete(ImputedFacets) #ema_dfi ==> ema_DataFrameImputed
-colnames(ema_dfi) = unname(unlist(Facets))
+Multilevel Reliability
+There are some no variance variables within person
+```{r, warning = FALSE}
+esm_facets <- ema_df %>% select(SID, A_cmpn:N_emoVol)
 
-ema_df = ema_df |> 
-  select(-unname(unlist(Facets))) |> #delete the original columns
-  bind_cols(ema_dfi) #glue the two dataframes together along the vertical seam
-ema_df
+#im so sorry emorie
+ml_rel_e<- multilevelTools::omegaSEM(data = esm_facets,
+                   id = "SID",
+                   items = Facets[["Extra"]],
+                   savemodel = TRUE
+                   )
+
+ml_rel_a <- multilevelTools::omegaSEM(data = esm_facets,
+                   id = "SID",
+                   items = Facets[["Agree"]],
+                   savemodel = TRUE
+                   )
+
+ml_rel_c <- multilevelTools::omegaSEM(data = esm_facets,
+                   id = "SID",
+                   items = Facets[["Consci"]],
+                   savemodel = TRUE
+                   )
+
+ml_rel_n <- multilevelTools::omegaSEM(data = esm_facets,
+                   id = "SID",
+                   items = Facets[["Neuro"]],
+                   savemodel = TRUE
+                   )
+
+ml_rel_o <- multilevelTools::omegaSEM(data = esm_facets,
+                   id = "SID",
+                   items = Facets[["Open"]],
+                   savemodel = TRUE
+                   )
+```
+aggregate into a table; this is fuckin cooked
+
+```{r}
+ml_rel_e_df <- ml_rel_e$Results %>%
+  mutate(trait = rep("Extraversion",2),
+         level = c("Within-person", "Between-person"),
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+  select(trait, estimate, level) %>%
+  pivot_wider(names_from = level,
+              values_from = estimate)
+
+ml_rel_a_df <- ml_rel_a$Results %>%
+  mutate(trait = rep("Agreeableness",2),
+         level = c("Within-person", "Between-person"),
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+  select(trait, estimate, level) %>%
+  pivot_wider(names_from = level,
+              values_from = estimate)
+
+ml_rel_c_df <- ml_rel_c$Results %>%
+  mutate(trait = rep("Conscientiousness",2),
+         level = c("Within-person", "Between-person"),
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+  select(trait, estimate, level) %>%
+  pivot_wider(names_from = level,
+              values_from = estimate)
+
+ml_rel_n_df <- ml_rel_n$Results %>%
+  mutate(trait = rep("Neuroticism",2),
+         level = c("Within-person", "Between-person"),
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+  select(trait, estimate, level) %>%
+  pivot_wider(names_from = level,
+              values_from = estimate)
+
+ml_rel_o_df <- ml_rel_o$Results %>%
+  mutate(trait = rep("Openness",2),
+         level = c("Within-person", "Between-person"),
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+  select(trait, estimate, level) %>%
+  pivot_wider(names_from = level,
+              values_from = estimate)
+
+ml_rel_df <- rbind(ml_rel_e_df, ml_rel_a_df, ml_rel_c_df, ml_rel_n_df, ml_rel_o_df) %>%
+  rename(Trait = trait)
+colnames(ml_rel_df)[2] <- "Within-person <br> (Range)"
+colnames(ml_rel_df)[3] <- "Between-person <br> (Range)"
+
+#lol fuck
+kable(ml_rel_df, format = "html",
+      escape = F, align = c("r", "c", "c"),
+        caption = "<strong> Table 3 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
+    kable_classic(full_width = F, html_font = "Times") 
+  #%>% save_kable(file = "Manuscript Tables and Figures/Multilevel Reliabilities For Each Study.html")
+
+
+```
+
+```{r}
+# #details on mice: https://github.com/amices/mice
+# #amelia
+# #Colin to Paste amelia / melia imputation here
+# #
+# ImputedFacets= mice::futuremice(ema_df |> select(unname(unlist(Facets))),
+#                     m=1,
+#                     maxit=50,
+#                     parallelseed = 42,
+#                     method='pmm', #"Predictive mean matching". details: https://github.com/amices/Winnipeg
+#                     #method = 'midastouch', #the documentation say that this is "weighted predictive mean matching"
+#                     #we could also set method='rf' for random forest imptuation. 
+#                     seed=500)
+# ema_dfi = complete(ImputedFacets) #ema_dfi ==> ema_DataFrameImputed
+# colnames(ema_dfi) = unname(unlist(Facets))
+# 
+# ema_df = ema_df |> 
+#   select(-unname(unlist(Facets))) |> #delete the original columns
+#   bind_cols(ema_dfi) #glue the two dataframes together along the vertical seam
+# ema_df
 
 ```
 
@@ -519,6 +644,64 @@ sc_cog %>%
   
 ```
 
+#Other Descriptives
+Descriptives
+
+```{r}
+#make it long
+cog_long <- cog_wide %>%
+  select(SID, Sociability:CrtvImagination) %>%
+  pivot_longer(
+    cols = Sociability:CrtvImagination
+    , names_to = c("trait")
+    , values_to = "value"
+  ) 
+
+# function for mean, sd, median, min, max, n, n missing
+descriptive_fun <- function(df, var) {
+  df %>%
+  summarize(
+      mean = mean({{ var }},   na.rm = TRUE),
+      sd     = sd({{ var }},     na.rm = TRUE),
+      median = median({{ var }}, na.rm = TRUE),
+      min    = min({{ var }},    na.rm = TRUE),
+      max    = max({{ var }},    na.rm = TRUE),
+      # omega  = omega({{var}}),
+      # alpha  = alpha({{var}}),
+      n      = n(),
+      .groups = "drop"
+      )
+}
+
+cog_descriptives <- cog_long %>%
+  group_by(SID, trait) %>% # we want descriptive for each trait for each participant
+  descriptive_fun(var = value) %>% 
+  ungroup()
+
+```
+
+Look at low variance participant-variables
+
+```{r}
+cog_descriptives %>%
+  filter(sd == 0 ) 
+#LETS FUCKING GO
+```
+
+Add study variable
+```{r}
+cog_wide <- cog_wide %>%
+  mutate(study = "Soc-Cog")
+
+table(is.na(cog_wide))
+
+
+
+#post ids for demographics
+cog_ids_post <- unique(cog_wide$SID)
+
+save(cog_ids_post, file = "Data/cog_ids_post.RData")
+```
 # Baseline Data
 
 ## Big Five Traits
