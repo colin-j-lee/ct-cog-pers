@@ -40,14 +40,18 @@ library(Amelia) # Amelia rather than mice for continuity
 #library(ctsem)
 library(stringr)
 library(officer)
-#library(future)
-#availableCores()
-#plan(multisession, workers = availableCores() - 1)
-#nbrOfWorkers()
+library(future)
+library(furrr)
 library(tidyverse)
-
+library(flextable)
+library(officer)
 ```
 
+```{r}
+availableCores()
+plan(multisession, workers = availableCores() - 1)
+nbrOfWorkers()
+```
 ## Current Date String
 
 ```{r}
@@ -60,7 +64,7 @@ CurrentDateString
 ## Custom Functions
 
 ```{r}
-FormatTableToWord = function(Table,OutputFileName) {
+FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption = NULL) {
   #Initially authored by E.W.
   
   #This formats a table according to basic APA standards, saves it to ms word.
@@ -70,47 +74,67 @@ FormatTableToWord = function(Table,OutputFileName) {
   warning('library(officer)')
   warning('library(flextable)')
   
-  big_black_border   <- fp_border(color = "black", width = 2)
-  thin_black_border  <- fp_border(color = "black", width = 1)
-  light_grey_border  <- fp_border(color = "gray90", width = 1)
+  big_black_border   = fp_border(color = "black", width = 2)
+  thin_black_border  = fp_border(color = "black", width = 1)
+  light_grey_border  = fp_border(color = "gray90", width = 1)
   
   my_paragraph = fp_par(
-  text.align = 'center',
-  padding.top = 1,
-  padding.bottom=1,
-  padding.left = 2,
-  padding.right = 2,
-  line_spacing = 1
+    text.align = 'center',
+    padding.top = 1,
+    padding.bottom=1,
+    padding.left = 2,
+    padding.right = 2,
+    line_spacing = 1
   )
   
-  APATable <- flextable(Table)  |> 
-              theme_vanilla() |>
-              font(fontname = "Times New Roman", part = "all") |>
-              fontsize(size = 12, part = "all") |> 
-              bold(part = "header") |> 
-              # Remove all existing borders
-              border_remove() |> 
-              # Add thick border at top of header
-              hline_top(part = "header", border = big_black_border) |> 
-              hline_bottom(part = "header", border = thin_black_border) |> 
-              hline_bottom(part = "body",   border = big_black_border) |> 
-              #  Add faint vertical lines (for seeing columns in Word)
-              vline(border = light_grey_border, part = "all") |> 
-              # ^^ THESE WILL NEED TO BE REMOVED, but are good for fiddling with widths
-              set_table_properties(layout = "autofit") |> 
-              # Auto-fit column widths for a nice starting point
-              autofit() |> 
-              #add in styling from above to make everything single spaced with minimal padding
-              style(pr_p =   my_paragraph, part = "all")
+  APATable = flextable(Table)  |> 
+    theme_vanilla() |>
+    font(fontname = "Times New Roman", part = "all") |>
+    fontsize(size = 12, part = "all") |> 
+    bold(part = "header") |> 
+    # Remove all existing borders
+    border_remove() |> 
+    # Add thick border at top of header
+    hline_top(part = "header", border = big_black_border) |> 
+    hline_bottom(part = "header", border = thin_black_border) |> 
+    hline_bottom(part = "body",   border = big_black_border) |> 
+    #  Add faint vertical lines (for seeing columns in Word)
+    vline(border = light_grey_border, part = "all") |> 
+    # ^^ THESE WILL NEED TO BE REMOVED, but are good for fiddling with widths
+    set_table_properties(layout = "autofit") |> 
+    # Auto-fit column widths for a nice starting point
+    autofit() |> 
+    #add in styling from above to make everything single spaced with minimal padding
+    style(pr_p = my_paragraph, part = "all")
   
   OutputDoc = read_docx()
+  
 
+  
+ # Add table number (bold) if provided
+  if (!is.null(table_number)) {
+    OutputDoc = body_add_fpar(OutputDoc, 
+                              fpar(ftext(table_number, 
+                                        fp_text(font.family = "Times New Roman", 
+                                               font.size = 12, 
+                                               bold = TRUE))))
+  }
+  
+  # Add caption (not bold) if provided
+  if (!is.null(caption)) {
+    OutputDoc = body_add_fpar(OutputDoc,
+                              fpar(ftext(caption,
+                                        fp_text(font.family = "Times New Roman", 
+                                               font.size = 12, 
+                                               bold = FALSE))))
+  }
+  
   # Add the flextable to the document
   OutputDoc = body_add_flextable(OutputDoc, APATable)
-
-# Save the document
+  
+  # Save the document
   print(OutputDoc, target = OutputFileName)
-  print(paste0('Table Saved as: ',OutputFileName))
+  print(paste0('Table Saved as: ', OutputFileName))
   print(paste0("Table Saved to: ", getwd()))
   warning("To remove the vertical borders, go to table design/line styles, select 'no border' and then you have a border eraser")
 }
@@ -122,26 +146,25 @@ FormatTableToWord = function(Table,OutputFileName) {
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
 #knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
+#knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
 
 ```{r}
-ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #evan
-ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #colin
-
-colnames(ema_df)
-head(ema_df)
+ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
+#ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
+#colnames(ema_df)
+#head(ema_df)
 #ema_df |> arrange(SID)
 ```
 
 ### Baseline Data
 
 ```{r}
-baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #evan
-baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #colin
+baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
+#baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
 
 colnames(baseline_df)
 head(baseline_df)
@@ -188,44 +211,51 @@ ema_df = ema_df |>
   mutate(DailySessionNumber = dense_rank(Hour),
          DailyStartTime = min(format(DateTime,"%H:%M:%S")),
          SecondsRelativeToNoon=ConvertToSecondsRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
-  ungroup() |> 
+  ungroup()
   # now we ensure consistent first-letter capitalization
-  rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
+```
+
+```{r}
+#next, fix the column name casing, and reorder the columns
+ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
   #now we reorder the columns
   select(SID,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
                       everything()) 
-ema_df
 
 #duplicates removed
-ema_df <- ema_df[!duplicated(ema_df), ]
-
+ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 ```
-
 
 ### Imputation of Big Five Facets
 ```{r}
-ema_df_mi <- data.frame(unclass(ema_df %>% 
-                                       select(SID, BeepBoops, A_cmpn:N_emoVol)))
-#bound it
-bounds_matrix <- cbind(3:17, lower = 1, upper = 5)
 
-ema_df_mi <- amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
+ema_df_mi = data.frame(unclass(ema_df %>% 
+                                       select(SID, BeepBoops, A_cmpn:N_emoVol)))
+
+bounds_matrix = cbind(3:17, lower = 1, upper = 5)
+```
+
+```{r}
+ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
   as_tibble() %>%
   full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
   select(-BeepBoops); ema_df_mi
 
 # look at state values post MI
-cog_pers <- ema_df_mi %>%
+cog_pers = ema_df_mi %>%
   select(A_cmpn:N_emoVol)
 describe(cog_pers) 
 
-ema_df <- ema_df_mi %>%
+ema_df = ema_df_mi %>%
   select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt,
          A_cmpn:N_emoVol)
+
 ```
 
 ## Some descriptives
 ```{r}
+
+#helper data structures
 Facets = list(
       Extra=c("E_assert","E_scblty","E_enerLev"),
       Agree=c("A_cmpn","A_rspct","A_trust"),
@@ -233,101 +263,159 @@ Facets = list(
       Neuro = c("N_anx","N_dep","N_emoVol"),
       Open = c("O_aesSens","O_crtvImag","O_intCur"))
 
+ShortToLongNames = c(
+  'Extra'='Extraversion',
+  'Agree'='Agreeableness',
+  'Consci'='Conscientiousness',
+  'Neuro'='Neuroticism',
+  'Open' = 'Openness'
+)
+
 #sanity check: the correlation matrix checks out:
-ema_df |> select(unname(unlist(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
+ema_df |> select(unlist(unname(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
-Multilevel Reliability
-There are some no variance variables within person
+# Multilevel Reliability
+Note: There are some no variance variables within person
 ```{r, warning = FALSE}
-esm_facets <- ema_df %>% select(SID, A_cmpn:N_emoVol)
+esm_facets = ema_df %>% select(SID, A_cmpn:N_emoVol)
 
 #im so sorry emorie
-ml_rel_e<- multilevelTools::omegaSEM(data = esm_facets,
-                   id = "SID",
-                   items = Facets[["Extra"]],
-                   savemodel = TRUE
-                   )
-
-ml_rel_a <- multilevelTools::omegaSEM(data = esm_facets,
-                   id = "SID",
-                   items = Facets[["Agree"]],
-                   savemodel = TRUE
-                   )
-
-ml_rel_c <- multilevelTools::omegaSEM(data = esm_facets,
-                   id = "SID",
-                   items = Facets[["Consci"]],
-                   savemodel = TRUE
-                   )
-
-ml_rel_n <- multilevelTools::omegaSEM(data = esm_facets,
-                   id = "SID",
-                   items = Facets[["Neuro"]],
-                   savemodel = TRUE
-                   )
-
-ml_rel_o <- multilevelTools::omegaSEM(data = esm_facets,
-                   id = "SID",
-                   items = Facets[["Open"]],
-                   savemodel = TRUE
-                   )
+# => i've attempted to save our souls with the version of the code below. I created a function to that calculates these omegas, and then I map-apply that over the names of the facts
 ```
-aggregate into a table; this is fuckin cooked
 
 ```{r}
-ml_rel_e_df <- ml_rel_e$Results %>%
-  mutate(trait = rep("Extraversion",2),
+#I've keep the warnings unsuprressed just so we can see what happens here
+GetOmegaSEM = function(facet_name) {
+  FullName = ShortToLongNames[facet_name]
+  Omegas = multilevelTools::omegaSEM(data = esm_facets,
+                            id = "SID",
+                            items = Facets[[facet_name]],
+                            savemodel = TRUE
+                            )
+  Omegas = Omegas$Results |> mutate(trait = rep(FullName ,2),
          level = c("Within-person", "Between-person"),
-         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-  select(trait, estimate, level) %>%
-  pivot_wider(names_from = level,
-              values_from = estimate)
+         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper))
+  
+ return(Omegas)
+}
 
-ml_rel_a_df <- ml_rel_a$Results %>%
-  mutate(trait = rep("Agreeableness",2),
-         level = c("Within-person", "Between-person"),
-         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-  select(trait, estimate, level) %>%
-  pivot_wider(names_from = level,
-              values_from = estimate)
+Reliabilities = bind_rows(future_map(names(Facets), GetOmegaSEM)) #do this in parallel so it's faster
+```
 
-ml_rel_c_df <- ml_rel_c$Results %>%
-  mutate(trait = rep("Conscientiousness",2),
-         level = c("Within-person", "Between-person"),
-         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-  select(trait, estimate, level) %>%
-  pivot_wider(names_from = level,
-              values_from = estimate)
+```{r}
+ReliabilityTable = Reliabilities |> 
+  select(trait,level,estimate) |>
+  rename(Trait=trait,Type=level, Omega=estimate) |> 
+  pivot_wider(names_from = Type, values_from = Omega) 
 
-ml_rel_n_df <- ml_rel_n$Results %>%
-  mutate(trait = rep("Neuroticism",2),
-         level = c("Within-person", "Between-person"),
-         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-  select(trait, estimate, level) %>%
-  pivot_wider(names_from = level,
-              values_from = estimate)
 
-ml_rel_o_df <- ml_rel_o$Results %>%
-  mutate(trait = rep("Openness",2),
-         level = c("Within-person", "Between-person"),
-         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-  select(trait, estimate, level) %>%
-  pivot_wider(names_from = level,
-              values_from = estimate)
+#This should be fewer clicks to get this table into production / final shape
+FormatTableToWord(ReliabilityTable,
+                  paste0("MultilevelReliabilityTableEsmData",CurrentDateString,'.docx'),
+                  'Table 2',
+                  'Multilevel Omega Reliabilities of Momentary BFI-2 Traits'
+                  )
 
-ml_rel_df <- rbind(ml_rel_e_df, ml_rel_a_df, ml_rel_c_df, ml_rel_n_df, ml_rel_o_df) %>%
-  rename(Trait = trait)
-colnames(ml_rel_df)[2] <- "Within-person <br> (Range)"
-colnames(ml_rel_df)[3] <- "Between-person <br> (Range)"
+# but if you want to kable this:
+ReliabilityTable |> 
+  kable(format = "html",
+        escape = F, align = c("l", "c", "c"),
+        caption = "<strong> Table 2 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
+  kable_classic(full_width = F, html_font = "Times")
+  
+```
 
-#lol fuck
-kable(ml_rel_df, format = "html",
-      escape = F, align = c("r", "c", "c"),
-        caption = "<strong> Table 3 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
-    kable_classic(full_width = F, html_font = "Times") 
-  #%>% save_kable(file = "Manuscript Tables and Figures/Multilevel Reliabilities For Each Study.html")
 
+
+```{r}
+
+
+#ml_rel_e= multilevelTools::omegaSEM(data = esm_facets,
+#                   id = "SID",
+#                   items = Facets[["Extra"]],
+#                   savemodel = TRUE
+#                   )
+
+#ml_rel_a = multilevelTools::omegaSEM(data = esm_facets,
+#                   id = "SID",
+#                   items = Facets[["Agree"]],
+#                   savemodel = TRUE
+#                   )
+
+#ml_rel_c = multilevelTools::omegaSEM(data = esm_facets,
+#                   id = "SID",
+#                   items = Facets[["Consci"]],
+#                   savemodel = TRUE
+#                   )
+
+#ml_rel_n = multilevelTools::omegaSEM(data = esm_facets,
+#                   id = "SID",
+#                   items = Facets[["Neuro"]],
+#                   savemodel = TRUE
+#                  )
+
+#ml_rel_o = multilevelTools::omegaSEM(data = esm_facets,
+#                   id = "SID",
+#                   items = Facets[["Open"]],
+#                   savemodel = TRUE
+#                   )
+```
+#aggregate into a table; this is fuckin cooked
+
+```{r}
+#ml_rel_e_df = ml_rel_e$Results %>%
+#  mutate(trait = rep("Extraversion",2),
+#         level = c("Within-person", "Between-person"),
+#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+#  select(trait, estimate, level) %>%
+#  pivot_wider(names_from = level,
+#              values_from = estimate)
+
+#ml_rel_a_df = ml_rel_a$Results %>%
+#  mutate(trait = rep("Agreeableness",2),
+#         level = c("Within-person", "Between-person"),
+#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+#  select(trait, estimate, level) %>%
+#  pivot_wider(names_from = level,
+#              values_from = estimate)
+
+#ml_rel_c_df = ml_rel_c$Results %>%
+#  mutate(trait = rep("Conscientiousness",2),
+#         level = c("Within-person", "Between-person"),
+#        estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+#  select(trait, estimate, level) %>%
+#  pivot_wider(names_from = level,
+ #             values_from = estimate)
+
+#ml_rel_n_df = ml_rel_n$Results %>%
+#  mutate(trait = rep("Neuroticism",2),
+#         level = c("Within-person", "Between-person"),
+#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+#  select(trait, estimate, level) %>%
+#  pivot_wider(names_from = level,
+#              values_from = estimate)
+
+#ml_rel_o_df = ml_rel_o$Results %>%
+#  mutate(trait = rep("Openness",2),
+#         level = c("Within-person", "Between-person"),
+#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
+#  select(trait, estimate, level) %>%
+#  pivot_wider(names_from = level,
+#              values_from = estimate)3
+
+# ml_rel_df = rbind(ml_rel_e_df, ml_rel_a_df, ml_rel_c_df, ml_rel_n_df, ml_rel_o_df) %>%
+#   rename(Trait = trait)
+# colnames(ml_rel_df)[2] = "Within-person <br> (Range)"
+# colnames(ml_rel_df)[3] = "Between-person <br> (Range)"
+# 
+# #lol fuck
+# kable(ml_rel_df, format = "html",
+#       escape = F, align = c("r", "c", "c"),
+#         caption = "<strong> Table 3 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
+#     kable_classic(full_width = F, html_font = "Times") 
+#   #%>% save_kable(file = "Manuscript Tables and Figures/Multilevel Reliabilities For Each Study.html")
+# 
 
 ```
 
@@ -522,28 +610,28 @@ ema_df
 ```{r}
 
 #this is an old function I have from a different script.
-#omega_total <- if (ncol(subset_data) >= 3) {
+#omega_total = if (ncol(subset_data) >= 3) {
 #      omega(subset_data,nfactors = NumberOfFacets, check.keys=FALSE)$omega.tot
 #    } else {
 #      NA
 #    }
 #    
 #    # Cronbach's alpha
-#    alpha_reliability <- if (ncol(subset_data) >= 2) {
+#    alpha_reliability = if (ncol(subset_data) >= 2) {
 #      alpha(subset_data,check.keys=FALSE)$total$raw_alpha
 #    } else {
 #      NA
 #    }
 #    
 #    # Item-total correlations
-#    item_total_cor <- if (ncol(subset_data) >= 2) {
+#    item_total_cor = if (ncol(subset_data) >= 2) {
 #      apply(subset_data, 2, function(x) cor(x, rowSums(subset_data), use = "complete.obs"))
 #   } else {
 #      rep(NA, ncol(subset_data))
 #    }
 #    
 #    # Add omega, alpha, item-total correlations, and person_wave info to descriptives data frame
-#    descriptives <- descriptives %>%
+#    descriptives = descriptives %>%
 #      mutate(
 #        omega_total = omega_total,
 #        alpha_reliability = alpha_reliability,
@@ -558,9 +646,9 @@ ema_df
 ##Code Emorie used to pull the data?
 
 ```{r}
-pp_cb <- readxl::read_excel("Codebooks/01-codebook.xlsx", sheet = "codebook")
-b5_items <- pp_cb %>% filter(Inventory == "BFI-2") %>% pull(old)
-# sc_df <- sc_df %>%
+pp_cb = readxl::read_excel("Codebooks/01-codebook.xlsx", sheet = "codebook")
+b5_items = pp_cb %>% filter(Inventory == "BFI-2") %>% pull(old)
+# sc_df = sc_df %>%
 #   #rename(N05 = N5) %>%
 #   select(SID, Date = Date_main, session:HourBlock, interrupt, all_of(b5_items)) %>%
 #   pivot_longer(
@@ -576,9 +664,9 @@ b5_items <- pp_cb %>% filter(Inventory == "BFI-2") %>% pull(old)
 #   summarize(value = mean(value, na.rm = T)) %>% 
 #   ungroup()
 
-#pomp <- function(x, mini = 1, maxi = 5) (x - mini)/(maxi - mini)*100
+#pomp = function(x, mini = 1, maxi = 5) (x - mini)/(maxi - mini)*100
 
-sc_b5 <- sc_df %>% 
+sc_b5 = sc_df %>% 
   group_by(SID, Date, StartDate, Day, Hour, HourBlock, session,  interrupt, trait) %>% 
   summarize(value = mean(value, na.rm = T)) %>% 
   ungroup() %>%
@@ -599,8 +687,8 @@ sc_b5 <- sc_df %>%
 ## Cognitive States
 
 ```{r}
-#pomp_obs <- function(x) (x - min(x, na.rm = T))/(max(x, na.rm = T)-min(x, na.rm = T))*100
-# sc_cog <- sc_df %>% 
+#pomp_obs = function(x) (x - min(x, na.rm = T))/(max(x, na.rm = T)-min(x, na.rm = T))*100
+# sc_cog = sc_df %>% 
 #   select(
 #     SID, Date = Date_main, session:HourBlock, interrupt, 
 #          , nback_score, vpa_score, dsm_score
@@ -611,7 +699,7 @@ sc_b5 <- sc_df %>%
   # mutate(cog_comp = mean(c_across(nback_score:dsm_score), na.rm = T)) %>%
   ungroup() 
 
-sc_b5cog <- sc_b5 %>%
+sc_b5cog = sc_b5 %>%
   inner_join(
     sc_cog 
     ) %>%
@@ -649,7 +737,7 @@ Descriptives
 
 ```{r}
 #make it long
-cog_long <- cog_wide %>%
+cog_long = cog_wide %>%
   select(SID, Sociability:CrtvImagination) %>%
   pivot_longer(
     cols = Sociability:CrtvImagination
@@ -658,7 +746,7 @@ cog_long <- cog_wide %>%
   ) 
 
 # function for mean, sd, median, min, max, n, n missing
-descriptive_fun <- function(df, var) {
+descriptive_fun = function(df, var) {
   df %>%
   summarize(
       mean = mean({{ var }},   na.rm = TRUE),
@@ -673,7 +761,7 @@ descriptive_fun <- function(df, var) {
       )
 }
 
-cog_descriptives <- cog_long %>%
+cog_descriptives = cog_long %>%
   group_by(SID, trait) %>% # we want descriptive for each trait for each participant
   descriptive_fun(var = value) %>% 
   ungroup()
@@ -690,7 +778,7 @@ cog_descriptives %>%
 
 Add study variable
 ```{r}
-cog_wide <- cog_wide %>%
+cog_wide = cog_wide %>%
   mutate(study = "Soc-Cog")
 
 table(is.na(cog_wide))
@@ -698,7 +786,7 @@ table(is.na(cog_wide))
 
 
 #post ids for demographics
-cog_ids_post <- unique(cog_wide$SID)
+cog_ids_post = unique(cog_wide$SID)
 
 save(cog_ids_post, file = "Data/cog_ids_post.RData")
 ```
@@ -707,7 +795,7 @@ save(cog_ids_post, file = "Data/cog_ids_post.RData")
 ## Big Five Traits
 
 ```{r}
-bl_df <- read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>%
+bl_df = read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>%
   select(
     SID, StartDate = date
     , starts_with("demo_eth"),
@@ -754,7 +842,7 @@ library(tidyverse)
 simple ass test
 
 ```{r}
-model<-ctModel(type='stanct'
+model=ctModel(type='stanct'
             , n.latent = 2, latentNames   = c("E", "vpa_score")
             , n.manifest = 2, manifestNames = c("E", "vpa_score")
             , TIpredNames = c("E_baseline", "age")
@@ -770,16 +858,16 @@ model<-ctModel(type='stanct'
             , id            = "id"
             , time          = "time" )
 
-model$pars$indvarying[7:14] <- TRUE #drift and diffusion
-model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10" #drift
-model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10" #diffusion
-model$pars$transform[21:22] <- "1*param" #CINT
+model$pars$indvarying[7:14] = TRUE #drift and diffusion
+model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #drift
+model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+model$pars$transform[21:22] = "1*param" #CINT
 
 model$pars
 
 
 
-model_fit <- ctStanFit(datalong = sherman_wide_person_centered, 
+model_fit = ctStanFit(datalong = sherman_wide_person_centered, 
                       ctstanmodel = model,
                       optimize = TRUE,
                       priors = TRUE,
@@ -791,8 +879,8 @@ model_fit <- ctStanFit(datalong = sherman_wide_person_centered,
                       )
 
 # Summary of the model
-modelsum <- summary(model_fit, digits = 4, parmatrices=TRUE)
-modelpar <- modelsum$parmatrices
+modelsum = summary(model_fit, digits = 4, parmatrices=TRUE)
+modelpar = modelsum$parmatrices
 print(modelsum$parmatrices)
 
 ```
@@ -801,19 +889,19 @@ All 30 trait-cog pairs
 
 ```{r}
 # Define traits and cogs
-traits <- colnames(sc_df)[4:8] #change col numbers
-cogs <- colnames(sc_df)[9:16] #change col numbers
+traits = colnames(sc_df)[4:8] #change col numbers
+cogs = colnames(sc_df)[9:16] #change col numbers
 
 # Create all trait-cog pairs
-trait_cog_pairs <- expand_grid(trait = traits, cog = cogs)
+trait_cog_pairs = expand_grid(trait = traits, cog = cogs)
 
-fit_bivariate_model <- function(trait, cog) {
+fit_bivariate_model = function(trait, cog) {
   message("Fitting model for:", trait, "and", cog, "\n")
 
   tryCatch({
-    var_names <- c(trait, cog)
+    var_names = c(trait, cog)
 
-    model <- ctModel(
+    model = ctModel(
       type = 'stanct',
       n.latent = 2,
       latentNames = var_names,
@@ -857,16 +945,16 @@ fit_bivariate_model <- function(trait, cog) {
       time = "time"
     )
 
-    model$pars$indvarying[7:14] <- TRUE #drift and diffusion
+    model$pars$indvarying[7:14] = TRUE #drift and diffusion
     
     #make diffusion variances reasonable
-    model$pars$transform[11] <- "log1p_exp(2 * param) + 1e-10"
-    model$pars$transform[14] <- "log1p_exp(2 * param) + 1e-10"
+    model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10"
+    model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10"
 
-    data_sub <- sherman_wide_person_centered %>%
+    data_sub = sherman_wide_person_centered %>%
       select(id, time, all_of(c(trait, cog)))
 
-    fit <- ctStanFit(datalong = data_sub, 
+    fit = ctStanFit(datalong = data_sub, 
                      ctstanmodel = model, 
                      optimize = TRUE, 
                      priors = TRUE,
@@ -874,7 +962,7 @@ fit_bivariate_model <- function(trait, cog) {
                      verbose = 1
                      )
 
-    fit_summary <- summary(fit, digits = 4, parmatrices = TRUE)
+    fit_summary = summary(fit, digits = 4, parmatrices = TRUE)
 
     tibble(
       pair = paste0(trait, "_", cog),
@@ -897,7 +985,7 @@ fit_bivariate_model <- function(trait, cog) {
 plan(multisession, workers = 4)
 
 # Fit all models
-ml_bivariate_results <- future_pmap_dfr(trait_cog_pairs, fit_bivariate_model, .progress = TRUE)
+ml_bivariate_results = future_pmap_dfr(trait_cog_pairs, fit_bivariate_model, .progress = TRUE)
 #check
 # ml_bivariate_results$summary[3][[1]]$parmatrices
 
@@ -918,24 +1006,24 @@ Yo we good - 5/14/25
 ```{r}
 # #load("Data/ml_bivariate_results.RData")
 # 
-# ml_bivariate_summary_t0_fixed <- ml_bivariate_results %>%
+# ml_bivariate_summary_t0_fixed = ml_bivariate_results %>%
 #   select(pair, summary)
 # 
 # # Extract the parmatrices from each summary
-# ml_bivariate_parmatrices_t0_fixed <- ml_bivariate_summary_t0_fixed %>%
+# ml_bivariate_parmatrices_t0_fixed = ml_bivariate_summary_t0_fixed %>%
 #   mutate(parmatrices = map(summary, ~ .x$parmatrices)) %>%
 #   select(pair, parmatrices)
 # 
 # #Are any estimates hella big; this is  indicative of poor model convergence and I can separately estimate them
 # 
-# par_check_t0_fixed <- ml_bivariate_parmatrices_t0_fixed %>%
+# par_check_t0_fixed = ml_bivariate_parmatrices_t0_fixed %>%
 #   mutate(any_mean_gt_20 = map_lgl(parmatrices, ~ any(.x$Mean > 20, na.rm = TRUE)))
 # 
-# par_large_means_t0_fixed <- par_check_t0_fixed %>%
+# par_large_means_t0_fixed = par_check_t0_fixed %>%
 #   filter(any_mean_gt_20) %>%
 #   mutate(high_mean_rows = map(parmatrices, ~ filter(.x, Mean > 20)))
 # 
-# par_large_unnest_t0_fixed <- par_large_means_t0_fixed %>% unnest(high_mean_rows) %>%
+# par_large_unnest_t0_fixed = par_large_means_t0_fixed %>% unnest(high_mean_rows) %>%
 #   mutate(Mean = round(Mean, 3))
 # 
 # #im so fuckin happy
