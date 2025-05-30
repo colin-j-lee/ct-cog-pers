@@ -30,7 +30,7 @@ Notes:
 
 ## Packages
 
-```{r}
+```{r, include = FALSE}
 library(psych)
 library(kableExtra)
 #library(plyr)
@@ -146,7 +146,7 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
 #knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-#knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
+knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
@@ -154,7 +154,7 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 
 ```{r}
 ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
-#ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
+ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
 #colnames(ema_df)
 #head(ema_df)
 #ema_df |> arrange(SID)
@@ -164,7 +164,7 @@ ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
 
 ```{r}
 baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
-#baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
+baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
 
 colnames(baseline_df)
 head(baseline_df)
@@ -184,13 +184,22 @@ head(ema_df)
 Should we do hours to make it similar to the time column?
 
 ```{r}
-ConvertToSecondsRelativeToNoon = function(dt) {
-  h = as.numeric(format(dt, "%H"))
-  m = as.numeric(format(dt, "%M"))
-  s = as.numeric(format(dt, "%S"))
-  total_seconds = h * 3600 + m * 60 + s
-  return(total_seconds - (12 * 3600))
+# ConvertToSecondsRelativeToNoon = function(dt) {
+#   h = as.numeric(format(dt, "%H"))
+#   m = as.numeric(format(dt, "%M"))
+#   s = as.numeric(format(dt, "%S"))
+#   total_seconds = h * 3600 + m * 60 + s
+#   return(total_seconds - (12 * 3600))
+# }
+
+ConvertToHoursRelativeToNoon <- function(dt) {
+  h <- as.numeric(format(dt, "%H"))
+  m <- as.numeric(format(dt, "%M"))
+  s <- as.numeric(format(dt, "%S"))
+  total_seconds <- h * 3600 + m * 60 + s
+  return((total_seconds - (12 * 3600)) / 3600)
 }
+
 #testdate= ema_df |> select(Date) |> slice(10) |> pull()
 #testdate
 #ConvertToSecondsRelativeToNoon(testdate)
@@ -214,7 +223,7 @@ ema_df = ema_df |>
   group_by(SID,Day) |> 
   mutate(DailySessionNumber = dense_rank(Hour),
          DailyStartTime = min(format(DateTime,"%H:%M:%S")),
-         SecondsRelativeToNoon=ConvertToSecondsRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
+         SecondsRelativeToNoon=ConvertToHoursRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
   ungroup()
   # now we ensure consistent first-letter capitalization
 ```
@@ -225,6 +234,9 @@ ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |>
   #now we reorder the columns
   select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
                       everything()) 
+#remove duplicates
+#before min obs
+ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 
 #min 25 obs
 ema_df <- ema_df %>%
@@ -232,13 +244,10 @@ ema_df <- ema_df %>%
   filter(n() >= 20) %>%
   ungroup()
 
-#remove duplicates
-ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 ```
 
 ### Imputation of Big Five Facets
 ```{r}
-
 ema_df_mi = data.frame(unclass(ema_df %>% 
                                        select(SID, BeepBoops, A_cmpn:N_emoVol)))
 
@@ -259,17 +268,21 @@ describe(cog_pers)
 ema_df = ema_df_mi %>%
   select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt,
          A_cmpn:N_emoVol)
-
 ```
 
 Append baseline variables we want
 ```{r}
-#relevant vars
+#relevant vars; there are also duplicates in baseline, same var values tho so we good
 baseline_append <- baseline_df %>%
   select(SID, demo_age, contains("BFI"))
 
+baseline_append = baseline_append[!duplicated(baseline_append$SID), ]
+
 # Find SIDs in ema_df that are not in baseline_df
-setdiff(ema_df$SID, baseline_append$SID)
+# setdiff(ema_df$SID, baseline_append$SID)
+
+test <- ema_df %>%
+  left_join(baseline_append, by = "SID")
 
 ```
 
