@@ -37,7 +37,7 @@ library(kableExtra)
 #library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
 library(Amelia) # Amelia rather than mice for continuity
 #library(rMIDAS)
-#library(ctsem)
+library(ctsem)
 library(stringr)
 library(officer)
 library(future)
@@ -181,6 +181,8 @@ head(baseline_df)
 head(ema_df)
 ```
 ### Helper Function for converting time to seconds
+Should we do hours to make it similar to the time column?
+
 ```{r}
 ConvertToSecondsRelativeToNoon = function(dt) {
   h = as.numeric(format(dt, "%H"))
@@ -199,12 +201,14 @@ ConvertToSecondsRelativeToNoon = function(dt) {
 ema_df = ema_df |> 
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
   rename(DateTime=Date) |> #Second, make surethe column more informative, and make sue 
+  mutate(DateTime = ymd_hms(DateTime)) %>%
   select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages. 
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
   #Next we create two within-person, across all sessions columns:
   group_by(SID) |> 
-  mutate(StartDate = min(format(DateTime,'%Y:%m:%d')),#get the start date for each participant
-         BeepBoops = dense_rank(DateTime)) |> #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
+  mutate(StartDate = min(DateTime, na.rm = TRUE),#get the start date for each participant
+         BeepBoops = dense_rank(DateTime), #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
+         time = as.numeric(difftime(DateTime, StartDate, units = "hours"))) |> 
   ungroup() |> 
   #Now, for each person, for each day:
   group_by(SID,Day) |> 
@@ -219,9 +223,8 @@ ema_df = ema_df |>
 #next, fix the column name casing, and reorder the columns
 ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
   #now we reorder the columns
-  select(SID,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
+  select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
                       everything()) 
-
 #duplicates removed
 ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 ```
@@ -251,6 +254,19 @@ ema_df = ema_df_mi %>%
          A_cmpn:N_emoVol)
 
 ```
+
+Append baseline variables we want
+```{r}
+#relevant vars
+baseline_append <- baseline_df %>%
+  select(SID, demo_age, contains("BFI"))
+
+# Find SIDs in ema_df that are not in baseline_df
+setdiff(ema_df$SID, baseline_append$SID)
+
+```
+
+
 
 ## Some descriptives
 ```{r}
