@@ -145,7 +145,7 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-#knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
 #knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
@@ -200,7 +200,7 @@ ConvertToSecondsRelativeToNoon = function(dt) {
 ```{r}
 ema_df = ema_df |> 
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
-  rename(DateTime=Date) |> #Second, make surethe column more informative, and make sue 
+  rename(DateTime=Date) |> #Second, make sure the column more informative, and make sue 
   mutate(DateTime = ymd_hms(DateTime)) %>%
   select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages. 
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
@@ -216,7 +216,7 @@ ema_df = ema_df |>
          DailyStartTime = min(format(DateTime,"%H:%M:%S")),
          SecondsRelativeToNoon=ConvertToSecondsRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
   ungroup()
-  # now we ensure consistent first-letter capitalization
+
 ```
 
 ```{r}
@@ -264,6 +264,8 @@ ema_df = ema_df_mi %>%
 
 Append baseline variables we want
 ```{r}
+
+#what happens with baseline_append? don't we want a join?
 #relevant vars
 baseline_append <- baseline_df %>%
   select(SID, demo_age, contains("BFI"))
@@ -308,7 +310,7 @@ esm_facets = ema_df %>% select(SID, A_cmpn:N_emoVol)
 ```
 
 ```{r}
-#I've keep the warnings unsuprressed just so we can see what happens here
+#I've kept the warnings unsuprressed just so we can see what happens here
 GetOmegaSEM = function(facet_name) {
   FullName = ShortToLongNames[facet_name]
   Omegas = multilevelTools::omegaSEM(data = esm_facets,
@@ -347,6 +349,7 @@ ReliabilityTable |>
         caption = "<strong> Table 2 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
   kable_classic(full_width = F, html_font = "Times")
   
+
 ```
 
 
