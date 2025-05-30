@@ -203,6 +203,12 @@ ema_df = ema_df |>
 #duplicates removed
 ema_df <- ema_df[!duplicated(ema_df), ]
 
+#min 25 obs
+ema_df <- ema_df %>%
+  group_by(SID) %>%
+  filter(n() >= 20) %>%
+  ungroup()
+
 ```
 
 
