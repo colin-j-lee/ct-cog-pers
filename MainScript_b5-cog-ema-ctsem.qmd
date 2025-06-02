@@ -11,7 +11,7 @@ editor_options:
 # Working Notes:
 
 Checklist / ToDos
--   [ ] Evan renaming and deleting superfluous code (work in progress)
+-   [x] Evan renaming and deleting superfluous code (work in progress)
 -   [ ] Data Processing: figure out a strategy for the 'presentation names' of variables. Do we just rename E_scblty to Sociability and keep track of the E=>Soci. mapping? Or do we swap them out prior to making the tables?
 -   [x] Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
 -   [x] Add imputation (at least linear MICE imputation. What about MIDAS imputation? )
@@ -626,47 +626,8 @@ warning('Need to figure out how to format this for MS Word.')
 #Option 2: Break it up over multiple pages. 
 CorrTable 
 ```
-#PAUSED HERE (EW)
-```{r}
-ema_df |> select(starts_with('E_')) |> omega(nfactors = 1)
-omega
-?omega
-ema_df
-```
-```{r}
 
-#this is an old function I have from a different script.
-#omega_total = if (ncol(subset_data) >= 3) {
-#      omega(subset_data,nfactors = NumberOfFacets, check.keys=FALSE)$omega.tot
-#    } else {
-#      NA
-#    }
-#    
-#    # Cronbach's alpha
-#    alpha_reliability = if (ncol(subset_data) >= 2) {
-#      alpha(subset_data,check.keys=FALSE)$total$raw_alpha
-#    } else {
-#      NA
-#    }
-#    
-#    # Item-total correlations
-#    item_total_cor = if (ncol(subset_data) >= 2) {
-#      apply(subset_data, 2, function(x) cor(x, rowSums(subset_data), use = "complete.obs"))
-#   } else {
-#      rep(NA, ncol(subset_data))
-#    }
-#    
-#    # Add omega, alpha, item-total correlations, and person_wave info to descriptives data frame
-#    descriptives = descriptives %>%
-#      mutate(
-#        omega_total = omega_total,
-#        alpha_reliability = alpha_reliability,
-#        item_total_cor = item_total_cor,
-#        person_wave = paste0(prefix, wave)
-#      )
-#    
 
-```
 # OLDER STUFF
 
 ##Code Emorie used to pull the data?
