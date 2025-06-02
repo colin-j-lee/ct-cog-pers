@@ -225,7 +225,7 @@ ema_df = ema_df |>
 #next, fix the column name casing, and reorder the columns
 ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
   #now we reorder the columns
-  select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
+  select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,HoursRelativeToNoon,Interrupt,
                       everything()) 
 #remove duplicates
 ```
@@ -253,9 +253,11 @@ bounds_matrix = cbind(3:17, lower = 1, upper = 5)
 ```
 Imputation:
 ```{r}
+#at some point we will want to save the output of this in a CSV and then just load that back in after  this cell so that the pipeline is deterministic.
+
 ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
   as_tibble() %>%
-  full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
+  full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
   select(-BeepBoops); ema_df_mi
 ```
 
@@ -270,7 +272,7 @@ describe(PersonalityStates)
 ```{r}
 #reorder columns
 ema_df = ema_df_mi %>%
-  select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt,
+  select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,
          A_cmpn:N_emoVol)
 ```
 
@@ -326,7 +328,7 @@ Note: There are some no variance variables within person
 esm_facets = ema_df %>% select(SID, A_cmpn:N_emoVol)
 
 #im so sorry emorie
-# => i've attempted to save our souls with the version of the code below. I created a function to that calculates these omegas, and then I map-apply that over the names of the facts
+# => i've attempted to save our souls with the version of the code below. I created a function to that calculates these omegas, and then the code map-applies that over the names of the facets
 ```
 
 ```{r}
@@ -373,121 +375,6 @@ ReliabilityTable |>
 ```
 
 
-
-```{r}
-
-
-#ml_rel_e= multilevelTools::omegaSEM(data = esm_facets,
-#                   id = "SID",
-#                   items = Facets[["Extra"]],
-#                   savemodel = TRUE
-#                   )
-
-#ml_rel_a = multilevelTools::omegaSEM(data = esm_facets,
-#                   id = "SID",
-#                   items = Facets[["Agree"]],
-#                   savemodel = TRUE
-#                   )
-
-#ml_rel_c = multilevelTools::omegaSEM(data = esm_facets,
-#                   id = "SID",
-#                   items = Facets[["Consci"]],
-#                   savemodel = TRUE
-#                   )
-
-#ml_rel_n = multilevelTools::omegaSEM(data = esm_facets,
-#                   id = "SID",
-#                   items = Facets[["Neuro"]],
-#                   savemodel = TRUE
-#                  )
-
-#ml_rel_o = multilevelTools::omegaSEM(data = esm_facets,
-#                   id = "SID",
-#                   items = Facets[["Open"]],
-#                   savemodel = TRUE
-#                   )
-```
-#aggregate into a table; this is fuckin cooked
-
-```{r}
-#ml_rel_e_df = ml_rel_e$Results %>%
-#  mutate(trait = rep("Extraversion",2),
-#         level = c("Within-person", "Between-person"),
-#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-#  select(trait, estimate, level) %>%
-#  pivot_wider(names_from = level,
-#              values_from = estimate)
-
-#ml_rel_a_df = ml_rel_a$Results %>%
-#  mutate(trait = rep("Agreeableness",2),
-#         level = c("Within-person", "Between-person"),
-#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-#  select(trait, estimate, level) %>%
-#  pivot_wider(names_from = level,
-#              values_from = estimate)
-
-#ml_rel_c_df = ml_rel_c$Results %>%
-#  mutate(trait = rep("Conscientiousness",2),
-#         level = c("Within-person", "Between-person"),
-#        estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-#  select(trait, estimate, level) %>%
-#  pivot_wider(names_from = level,
- #             values_from = estimate)
-
-#ml_rel_n_df = ml_rel_n$Results %>%
-#  mutate(trait = rep("Neuroticism",2),
-#         level = c("Within-person", "Between-person"),
-#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-#  select(trait, estimate, level) %>%
-#  pivot_wider(names_from = level,
-#              values_from = estimate)
-
-#ml_rel_o_df = ml_rel_o$Results %>%
-#  mutate(trait = rep("Openness",2),
-#         level = c("Within-person", "Between-person"),
-#         estimate = sprintf("%2.2f [%2.2f, %2.2f]", est, ci.lower, ci.upper)) %>%
-#  select(trait, estimate, level) %>%
-#  pivot_wider(names_from = level,
-#              values_from = estimate)3
-
-# ml_rel_df = rbind(ml_rel_e_df, ml_rel_a_df, ml_rel_c_df, ml_rel_n_df, ml_rel_o_df) %>%
-#   rename(Trait = trait)
-# colnames(ml_rel_df)[2] = "Within-person <br> (Range)"
-# colnames(ml_rel_df)[3] = "Between-person <br> (Range)"
-# 
-# #lol fuck
-# kable(ml_rel_df, format = "html",
-#       escape = F, align = c("r", "c", "c"),
-#         caption = "<strong> Table 3 </strong><br><em>Multilevel Omega Reliabilities of Momentary BFI-2 Traits</em>") %>%
-#     kable_classic(full_width = F, html_font = "Times") 
-#   #%>% save_kable(file = "Manuscript Tables and Figures/Multilevel Reliabilities For Each Study.html")
-# 
-
-```
-
-```{r}
-# #details on mice: https://github.com/amices/mice
-# #amelia
-# #Colin to Paste amelia / melia imputation here
-# #
-# ImputedFacets= mice::futuremice(ema_df |> select(unname(unlist(Facets))),
-#                     m=1,
-#                     maxit=50,
-#                     parallelseed = 42,
-#                     method='pmm', #"Predictive mean matching". details: https://github.com/amices/Winnipeg
-#                     #method = 'midastouch', #the documentation say that this is "weighted predictive mean matching"
-#                     #we could also set method='rf' for random forest imptuation. 
-#                     seed=500)
-# ema_dfi = complete(ImputedFacets) #ema_dfi ==> ema_DataFrameImputed
-# colnames(ema_dfi) = unname(unlist(Facets))
-# 
-# ema_df = ema_df |> 
-#   select(-unname(unlist(Facets))) |> #delete the original columns
-#   bind_cols(ema_dfi) #glue the two dataframes together along the vertical seam
-# ema_df
-
-```
-
 ### Creating Domain Scores From Facets
 
 ```{r}
@@ -504,6 +391,8 @@ ema_df
 warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
 #colin to take a look
 #emorie has code for this
+
+ema_df
 ```
 ## Basline Data
 ### Item Reversals
