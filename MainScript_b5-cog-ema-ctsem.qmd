@@ -30,7 +30,7 @@ Notes:
 
 ## Packages
 
-```{r}
+```{r, include = FALSE}
 library(psych)
 library(kableExtra)
 #library(plyr)
@@ -147,6 +147,7 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 
 knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
 #knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
+
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
@@ -184,19 +185,20 @@ head(ema_df)
 Should we do hours to make it similar to the time column?
 
 ```{r}
-ConvertToSecondsRelativeToNoon = function(dt) {
-  h = as.numeric(format(dt, "%H"))
-  m = as.numeric(format(dt, "%M"))
-  s = as.numeric(format(dt, "%S"))
-  total_seconds = h * 3600 + m * 60 + s
-  return(total_seconds - (12 * 3600))
+ConvertToHoursRelativeToNoon <- function(dt) {
+  h <- as.numeric(format(dt, "%H"))
+  m <- as.numeric(format(dt, "%M"))
+  s <- as.numeric(format(dt, "%S"))
+  total_seconds <- h * 3600 + m * 60 + s
+  return((total_seconds - (12 * 3600)) / 3600)
 }
+
 #testdate= ema_df |> select(Date) |> slice(10) |> pull()
 #testdate
-#ConvertToSecondsRelativeToNoon(testdate)
-#ema_df |> arrange(SID,Date) 
+#ConvertToHoursRelativeToNoon(testdate)
 ```
 
+### Main data transformations
 ```{r}
 ema_df = ema_df |> 
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
@@ -214,7 +216,7 @@ ema_df = ema_df |>
   group_by(SID,Day) |> 
   mutate(DailySessionNumber = dense_rank(Hour),
          DailyStartTime = min(format(DateTime,"%H:%M:%S")),
-         SecondsRelativeToNoon=ConvertToSecondsRelativeToNoon(DateTime)) |> #note that Emorie said something about "decimal time" so maybe we should divide by 10 or 100 here?
+         HoursRelativeToNoon=ConvertToHoursRelativeToNoon(DateTime)) |>
   ungroup()
 
 ```
@@ -225,53 +227,71 @@ ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |>
   #now we reorder the columns
   select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,SecondsRelativeToNoon,Interrupt,
                       everything()) 
+#remove duplicates
+```
 
-#min 25 obs
+### Remove duplicates and filter for minimum observations
+```{r}
+#before min obs
+ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
+
+#filter for minimum 25 observations
 ema_df <- ema_df %>%
   group_by(SID) %>%
   filter(n() >= 20) %>%
   ungroup()
 
-#remove duplicates
-ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 ```
 
 ### Imputation of Big Five Facets
+Prep:
 ```{r}
-
 ema_df_mi = data.frame(unclass(ema_df %>% 
                                        select(SID, BeepBoops, A_cmpn:N_emoVol)))
 
 bounds_matrix = cbind(3:17, lower = 1, upper = 5)
 ```
-
+Imputation:
 ```{r}
 ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
   as_tibble() %>%
   full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
   select(-BeepBoops); ema_df_mi
+```
+
+```{r}
 
 # look at state values post MI
-cog_pers = ema_df_mi %>%
+PersonalityStates = ema_df_mi %>%
   select(A_cmpn:N_emoVol)
-describe(cog_pers) 
+describe(PersonalityStates) 
+```
 
+```{r}
+#reorder columns
 ema_df = ema_df_mi %>%
   select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, SecondsRelativeToNoon, Interrupt,
          A_cmpn:N_emoVol)
-
 ```
 
-Append baseline variables we want
+Join baseline variables we want
+
 ```{r}
 
-#what happens with baseline_append? don't we want a join?
-#relevant vars
-baseline_append <- baseline_df %>%
+#relevant vars; there are also duplicates in baseline, same var values tho so we good
+
+baseline_to_join <- baseline_df %>% #this may be pedantic, but given that we aren't technically appending two dataframes, but rather joining one to another, I think this is an easier-to-remember-later variable name. 
   select(SID, demo_age, contains("BFI"))
 
+baseline_to_join = baseline_append[!duplicated(baseline_append$SID), ]
+baseline_to_join 
 # Find SIDs in ema_df that are not in baseline_df
-setdiff(ema_df$SID, baseline_append$SID)
+#setdiff(ema_df$SID, baseline_append$SID)
+
+
+test <- ema_df %>%
+  left_join(baseline_to_join, by = "SID")
+#It's almost hard to believe that CT-SEM will take this kind of dataframe with so much redundant information. 
 
 ```
 
