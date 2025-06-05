@@ -37,7 +37,7 @@ library(kableExtra)
 #library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
 library(Amelia) # Amelia rather than mice for continuity
 #library(rMIDAS)
-library(ctsem)
+library(ctsem) 
 library(stringr)
 library(officer)
 library(future)
@@ -219,14 +219,15 @@ ema_df = ema_df |>
          HoursRelativeToNoon=ConvertToHoursRelativeToNoon(DateTime)) |>
   ungroup()
 
+ema_df
+
 ```
 
 ```{r}
 #next, fix the column name casing, and reorder the columns
 ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
   #now we reorder the columns
-  select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,HoursRelativeToNoon,Interrupt,
-                      everything()) 
+  select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,HoursRelativeToNoon,Interrupt,everything()) 
 #remove duplicates
 ```
 
@@ -241,6 +242,7 @@ ema_df <- ema_df %>%
   filter(n() >= 20) %>%
   ungroup()
 
+ema_df
 ```
 
 ### Imputation of Big Five Facets
@@ -250,31 +252,34 @@ ema_df_mi = data.frame(unclass(ema_df %>%
                                        select(SID, BeepBoops, A_cmpn:N_emoVol)))
 
 bounds_matrix = cbind(3:17, lower = 1, upper = 5)
+ema_df
 ```
 Imputation:
 ```{r}
 #at some point we will want to save the output of this in a CSV and then just load that back in after  this cell so that the pipeline is deterministic.
 
+# The outcomes were getting lost here, so I've split up the joining logic.
+to_add_to_mi_df = ema_df |> select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
+
+
 ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
   as_tibble() %>%
-  full_join(ema_df %>% select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt), by = c("SID", "BeepBoops")) %>%
-  select(-BeepBoops); ema_df_mi
+  full_join(to_add_to_mi_df, by = c("SID", "BeepBoops")) %>%
+  select(-BeepBoops)
+
+#re-order the columns
+ema_df_mi = ema_df_mi |> select(SID,DateTime:Interrupt,A_cmpn:N_emoVol,Nback_score:Dsm_medianRTc) 
+
+
 ```
 
 ```{r}
-
 # look at state values post MI
 PersonalityStates = ema_df_mi %>%
   select(A_cmpn:N_emoVol)
 describe(PersonalityStates) 
 ```
 
-```{r}
-#reorder columns
-ema_df = ema_df_mi %>%
-  select(SID, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,
-         A_cmpn:N_emoVol)
-```
 
 Join baseline variables we want
 
@@ -285,18 +290,19 @@ Join baseline variables we want
 baseline_to_join <- baseline_df %>% #this may be pedantic, but given that we aren't technically appending two dataframes, but rather joining one to another, I think this is an easier-to-remember-later variable name. 
   select(SID, demo_age, contains("BFI"))
 
-baseline_to_join = baseline_append[!duplicated(baseline_append$SID), ]
+baseline_to_join = baseline_to_join[!duplicated(baseline_to_join$SID), ]
 baseline_to_join 
 # Find SIDs in ema_df that are not in baseline_df
 #setdiff(ema_df$SID, baseline_append$SID)
 
-
-test <- ema_df %>%
+warning('This needs to be the imputed dataset:')
+df = ema_df_mi %>%
   left_join(baseline_to_join, by = "SID")
 #It's almost hard to believe that CT-SEM will take this kind of dataframe with so much redundant information. 
-
+df
 ```
 
+Naming conventions: A_cmpn,C_org etc. is from the EMA. BFI_E_1 etc. is from baseline
 
 
 ## Some descriptives
@@ -304,28 +310,28 @@ test <- ema_df %>%
 
 #helper data structures
 Facets = list(
-      Extra=c("E_assert","E_scblty","E_enerLev"),
-      Agree=c("A_cmpn","A_rspct","A_trust"),
-      Consci = c("C_org","C_prdctv","C_rspnsbl"),
-      Neuro = c("N_anx","N_dep","N_emoVol"),
-      Open = c("O_aesSens","O_crtvImag","O_intCur"))
+      StateExtra=c("E_assert","E_scblty","E_enerLev"),
+      StateAgree=c("A_cmpn","A_rspct","A_trust"),
+      StateConsci = c("C_org","C_prdctv","C_rspnsbl"),
+      StateNeuro = c("N_anx","N_dep","N_emoVol"),
+      StateOpen = c("O_aesSens","O_crtvImag","O_intCur"))
 
 ShortToLongNames = c(
-  'Extra'='Extraversion',
-  'Agree'='Agreeableness',
-  'Consci'='Conscientiousness',
-  'Neuro'='Neuroticism',
-  'Open' = 'Openness'
+  'StateExtra'='Extraversion',
+  'StateAgree'='Agreeableness',
+  'StateConsci'='Conscientiousness',
+  'StateNeuro'='Neuroticism',
+  'StateOpen' = 'Openness'
 )
 
 #sanity check: the correlation matrix checks out:
-ema_df |> select(unlist(unname(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
+df |> select(unlist(unname(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
 # Multilevel Reliability
 Note: There are some no variance variables within person
 ```{r, warning = FALSE}
-esm_facets = ema_df %>% select(SID, A_cmpn:N_emoVol)
+esm_facets = df %>% select(SID, A_cmpn:N_emoVol)
 
 #im so sorry emorie
 # => i've attempted to save our souls with the version of the code below. I created a function to that calculates these omegas, and then the code map-applies that over the names of the facets
@@ -378,21 +384,22 @@ ReliabilityTable |>
 ### Creating Domain Scores From Facets
 
 ```{r}
-ema_df = ema_df |> 
+df = df |> 
   bind_cols( #glue together ema_df and whatever comes next along the vertical seam
     map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE)) #map_dfc stands for "map data frame column-bind"
     #for each element in Facets (i.e. for each vector of column-name-strings), this gets those columns in ema_df, and takes the row means
   )
-ema_df
+df
 ```
 
 
 ```{r}
 warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
-#colin to take a look
-#emorie has code for this
 
-ema_df
+df = df |> mutate(
+    Nback_medianRTc = ifelse(Nback_medianRTc > 5000 | Nback_medianRTc == 0, NA, Nback_medianRTc),
+    Vpa_medianRTc = ifelse(Vpa_medianRTc > 7500 | Vpa_medianRTc == 0, NA, Vpa_medianRTc),
+    Dsm_medianRTc = ifelse(Dsm_medianRTc > 5000 | Vpa_medianRTc == 0, NA, Dsm_medianRTc))
 ```
 ## Basline Data
 ### Item Reversals
@@ -483,13 +490,23 @@ baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> 
 #Latent Variables or Composites for Big Five Traits?
 
 ```{r}
-#something like: baseline_df |> select(contains("BFI_E")) |> rowMeans() etc. 
+#going with composites for now
+df  = df %>%
+  mutate(
+    BaselineExtraversion = rowMeans(select(., contains("BFI_E")), na.rm = TRUE),
+    BaselineAgreeableness = rowMeans(select(., contains("BFI_A")), na.rm = TRUE),
+    BaselineConscientiousness= rowMeans(select(., contains("BFI_C")), na.rm = TRUE),
+    BaselineNeuroticism= rowMeans(select(., contains("BFI_N")), na.rm = TRUE),
+    BaselineOpenness= rowMeans(select(., contains("BFI_O")), na.rm = TRUE),
+  ) |> select(-contains('BFI'))
+
+
 ```
 #Exploratory Visualization
 
 
 ```{r}
-ema_df |>  group_by(SID) %>%
+df |>  group_by(SID) %>%
   filter(n() > 40) %>%
   ungroup() %>%
   filter(SID %in% sample(unique(.$SID), 20)) %>%
