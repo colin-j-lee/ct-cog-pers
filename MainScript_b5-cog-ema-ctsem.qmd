@@ -145,17 +145,16 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-#knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
-
+#knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
 
 ```{r}
-ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
-#ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
+#ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
+ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
 #colnames(ema_df)
 #head(ema_df)
 #ema_df |> arrange(SID)
@@ -164,8 +163,8 @@ ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
 ### Baseline Data
 
 ```{r}
-baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
-#baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
+#baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
+baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
 
 colnames(baseline_df)
 head(baseline_df)
@@ -252,14 +251,14 @@ ema_df_mi = data.frame(unclass(ema_df %>%
                                        select(SID, BeepBoops, A_cmpn:N_emoVol)))
 
 bounds_matrix = cbind(3:17, lower = 1, upper = 5)
-ema_df
+ema_df_mi
 ```
 Imputation:
 ```{r}
 #at some point we will want to save the output of this in a CSV and then just load that back in after  this cell so that the pipeline is deterministic.
 
 # The outcomes were getting lost here, so I've split up the joining logic.
-to_add_to_mi_df = ema_df |> select(SID, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
+to_add_to_mi_df = ema_df |> select(SID, Time, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
 
 
 ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
@@ -268,7 +267,7 @@ ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = boun
   select(-BeepBoops)
 
 #re-order the columns
-ema_df_mi = ema_df_mi |> select(SID,DateTime:Interrupt,A_cmpn:N_emoVol,Nback_score:Dsm_medianRTc) 
+ema_df_mi = ema_df_mi |> select(SID,Time,DateTime:Interrupt,A_cmpn:N_emoVol,Nback_score:Dsm_medianRTc) 
 
 
 ```
@@ -279,7 +278,91 @@ PersonalityStates = ema_df_mi %>%
   select(A_cmpn:N_emoVol)
 describe(PersonalityStates) 
 ```
+## Basline Data
+### Item Reversals
+```{r}
+#do the items need to be reverse scored?
+baseline_df |> select(contains("E_")) |> cor(use='pairwise.complete.obs') |> round(2)
+#Yes they do!
+```
+```{r}
+Reversals =  list(
+  BFI_E_1 = FALSE,
+  BFI_E_2 = FALSE,
+  BFI_E_3 = TRUE,
+  BFI_E_4 = TRUE,
+  BFI_E_5 = FALSE,
+  BFI_E_6 = FALSE,
+  BFI_E_7 = TRUE,
+  BFI_E_8 = TRUE,
+  BFI_E_9 = FALSE,
+  BFI_E_10 = FALSE,
+  BFI_E_11 = TRUE,
+  BFI_E_12 = TRUE,
+  BFI_A_1 = FALSE,
+  BFI_A_2 = FALSE,
+  BFI_A_3 = TRUE,
+  BFI_A_4 = TRUE,
+  BFI_A_5 = FALSE,
+  BFI_A_6 = FALSE,
+  BFI_A_7 = TRUE,
+  BFI_A_8 = TRUE,
+  BFI_A_9 = FALSE,
+  BFI_A_10 = FALSE,
+  BFI_A_11 = TRUE,
+  BFI_A_12 = TRUE,
+  BFI_C_1 = FALSE,
+  BFI_C_2 = FALSE,
+  BFI_C_3 = TRUE,
+  BFI_C_4 = TRUE,
+  BFI_C_5 = FALSE,
+  BFI_C_6 = FALSE,
+  BFI_C_7 = TRUE,
+  BFI_C_8 = TRUE,
+  BFI_C_9 = FALSE,
+  BFI_C_10 = FALSE,
+  BFI_C_11 = TRUE,
+  BFI_C_12 = TRUE,
+  BFI_N_1 = FALSE,
+  BFI_N_2 = FALSE,
+  BFI_N_3 = TRUE,
+  BFI_N_4 = TRUE,
+  BFI_N_5 = FALSE,
+  BFI_N_6 = FALSE,
+  BFI_N_7 = TRUE,
+  BFI_N_8 = TRUE,
+  BFI_N_9 = FALSE,
+  BFI_N_10 = FALSE,
+  BFI_N_11 = TRUE,
+  BFI_N_12 = TRUE,
+  BFI_O_1 = FALSE,
+  BFI_O_2 = FALSE,
+  BFI_O_3 = TRUE,
+  BFI_O_4 = TRUE,
+  BFI_O_5 = FALSE,
+  BFI_O_6 = FALSE,
+  BFI_O_7 = TRUE,
+  BFI_O_8 = TRUE,
+  BFI_O_9 = FALSE,
+  BFI_O_10 = FALSE,
+  BFI_O_11 = TRUE,
+  BFI_O_12 = TRUE
+)
+```
 
+```{r}
+ItemsToBeReversed =  names(Reversals)[unlist(Reversals)] #uses the boolean map above to select the column names which = TRUE
+
+baseline_df = baseline_df |> 
+  # 1. create *new* columns for the reversed items, suffixing them with "r"
+  mutate(across(all_of(ItemsToBeReversed),
+                ~ 6 - .x,
+                .names = "{.col}r")) %>%
+  # 2. drop the *original* (un-suffixed) reversed columns
+  select(-all_of(ItemsToBeReversed ))
+
+baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
+```
 
 Join baseline variables we want
 
@@ -400,91 +483,6 @@ df = df |> mutate(
     Nback_medianRTc = ifelse(Nback_medianRTc > 5000 | Nback_medianRTc == 0, NA, Nback_medianRTc),
     Vpa_medianRTc = ifelse(Vpa_medianRTc > 7500 | Vpa_medianRTc == 0, NA, Vpa_medianRTc),
     Dsm_medianRTc = ifelse(Dsm_medianRTc > 5000 | Vpa_medianRTc == 0, NA, Dsm_medianRTc))
-```
-## Basline Data
-### Item Reversals
-```{r}
-#do the items need to be reverse scored?
-baseline_df |> select(contains("E_")) |> cor(use='pairwise.complete.obs') |> round(2)
-#Yes they do!
-```
-```{r}
-Reversals =  list(
-  BFI_E_1 = FALSE,
-  BFI_E_2 = FALSE,
-  BFI_E_3 = TRUE,
-  BFI_E_4 = TRUE,
-  BFI_E_5 = FALSE,
-  BFI_E_6 = FALSE,
-  BFI_E_7 = TRUE,
-  BFI_E_8 = TRUE,
-  BFI_E_9 = FALSE,
-  BFI_E_10 = FALSE,
-  BFI_E_11 = TRUE,
-  BFI_E_12 = TRUE,
-  BFI_A_1 = FALSE,
-  BFI_A_2 = FALSE,
-  BFI_A_3 = TRUE,
-  BFI_A_4 = TRUE,
-  BFI_A_5 = FALSE,
-  BFI_A_6 = FALSE,
-  BFI_A_7 = TRUE,
-  BFI_A_8 = TRUE,
-  BFI_A_9 = FALSE,
-  BFI_A_10 = FALSE,
-  BFI_A_11 = TRUE,
-  BFI_A_12 = TRUE,
-  BFI_C_1 = FALSE,
-  BFI_C_2 = FALSE,
-  BFI_C_3 = TRUE,
-  BFI_C_4 = TRUE,
-  BFI_C_5 = FALSE,
-  BFI_C_6 = FALSE,
-  BFI_C_7 = TRUE,
-  BFI_C_8 = TRUE,
-  BFI_C_9 = FALSE,
-  BFI_C_10 = FALSE,
-  BFI_C_11 = TRUE,
-  BFI_C_12 = TRUE,
-  BFI_N_1 = FALSE,
-  BFI_N_2 = FALSE,
-  BFI_N_3 = TRUE,
-  BFI_N_4 = TRUE,
-  BFI_N_5 = FALSE,
-  BFI_N_6 = FALSE,
-  BFI_N_7 = TRUE,
-  BFI_N_8 = TRUE,
-  BFI_N_9 = FALSE,
-  BFI_N_10 = FALSE,
-  BFI_N_11 = TRUE,
-  BFI_N_12 = TRUE,
-  BFI_O_1 = FALSE,
-  BFI_O_2 = FALSE,
-  BFI_O_3 = TRUE,
-  BFI_O_4 = TRUE,
-  BFI_O_5 = FALSE,
-  BFI_O_6 = FALSE,
-  BFI_O_7 = TRUE,
-  BFI_O_8 = TRUE,
-  BFI_O_9 = FALSE,
-  BFI_O_10 = FALSE,
-  BFI_O_11 = TRUE,
-  BFI_O_12 = TRUE
-)
-```
-
-```{r}
-ItemsToBeReversed =  names(Reversals)[unlist(Reversals)] #uses the boolean map above to select the column names which = TRUE
-
-baseline_df = baseline_df |> 
-  # 1. create *new* columns for the reversed items, suffixing them with "r"
-  mutate(across(all_of(ItemsToBeReversed),
-                ~ 6 - .x,
-                .names = "{.col}r")) %>%
-  # 2. drop the *original* (un-suffixed) reversed columns
-  select(-all_of(ItemsToBeReversed ))
-
-baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
 #Latent Variables or Composites for Big Five Traits?
@@ -703,41 +701,41 @@ cog_ids_post = unique(cog_wide$SID)
 
 save(cog_ids_post, file = "Data/cog_ids_post.RData")
 ```
-# Baseline Data
+<!-- # Baseline Data -->
 
-## Big Five Traits
+<!-- ## Big Five Traits -->
 
-```{r}
-bl_df = read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>%
-  select(
-    SID, StartDate = date
-    , starts_with("demo_eth"),
-    , demo_gender, demo_gender_TEXT = demo_gender_3_TEXT, demo_hispanic
-    , demo_orientation, demo_orientation_TEXT = demo_orientation_4_TEXT
-    , demo_YOB, demo_age
-    , demo_education
-    , demo_income
-    , demo_relationship 
-    # , demo_livingSituation
-    # , demo_employment 
-    # , demo_mom_edu, demo_dad_edu
-    , starts_with("BFI")
-    # , health_physAct = `health-physAct` 
-    # , health_smoke = `health-smoke`
-    # , health_height = `health-height`, health_weight = `health-weight`
-    # , health_cholesterol = `health-CC_1`
-    # , health_hypertension = `health-CC_2`
-    # , health_diabetes = `health-CC_3`
-    # , health_depression = `health-CC_4`
-    # , health_tbi = `health-CC_5`
-    # , health_heartDis = `health-CC_6`
-    # , health_renal = `health-CC_7`
-    # , starts_with("sud")
-    ) %>%
-  filter(!is.na(SID))
-write_csv(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.csv", Sys.Date()))
-save(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.RData", Sys.Date()))
-```
+<!-- ```{r} -->
+<!-- bl_df = read_csv("parsed-data/baseline/baseline_wide_clean_data_W1_2025-04-30.csv") %>% -->
+<!--   select( -->
+<!--     SID, StartDate = date -->
+<!--     , starts_with("demo_eth"), -->
+<!--     , demo_gender, demo_gender_TEXT = demo_gender_3_TEXT, demo_hispanic -->
+<!--     , demo_orientation, demo_orientation_TEXT = demo_orientation_4_TEXT -->
+<!--     , demo_YOB, demo_age -->
+<!--     , demo_education -->
+<!--     , demo_income -->
+<!--     , demo_relationship  -->
+<!--     # , demo_livingSituation -->
+<!--     # , demo_employment  -->
+<!--     # , demo_mom_edu, demo_dad_edu -->
+<!--     , starts_with("BFI") -->
+<!--     # , health_physAct = `health-physAct`  -->
+<!--     # , health_smoke = `health-smoke` -->
+<!--     # , health_height = `health-height`, health_weight = `health-weight` -->
+<!--     # , health_cholesterol = `health-CC_1` -->
+<!--     # , health_hypertension = `health-CC_2` -->
+<!--     # , health_diabetes = `health-CC_3` -->
+<!--     # , health_depression = `health-CC_4` -->
+<!--     # , health_tbi = `health-CC_5` -->
+<!--     # , health_heartDis = `health-CC_6` -->
+<!--     # , health_renal = `health-CC_7` -->
+<!--     # , starts_with("sud") -->
+<!--     ) %>% -->
+<!--   filter(!is.na(SID)) -->
+<!-- write_csv(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.csv", Sys.Date())) -->
+<!-- save(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.RData", Sys.Date())) -->
+<!-- ``` -->
 
 ## Ctsem shite
 
@@ -756,10 +754,10 @@ simple ass test
 
 ```{r}
 model=ctModel(type='stanct'
-            , n.latent = 2, latentNames   = c("E", "vpa_score")
-            , n.manifest = 2, manifestNames = c("E", "vpa_score")
-            , TIpredNames = c("E_baseline", "age")
-            , TDpredNames = c("interrupt", "Hour", "session")
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion", "demo_age")
+            , TDpredNames = c("Interrupt", "Hour", "Session")
             , LAMBDA=diag(2)
             , MANIFESTMEANS = 0 #fix this for estimation 
             , CINT = matrix(c("mu_trait", "mu_cog"), nrow = 2) #estimate this for equil calculation
@@ -768,8 +766,8 @@ model=ctModel(type='stanct'
             , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
             , DIFFUSION = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE), 
             , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
-            , id            = "id"
-            , time          = "time" )
+            , id            = "SID"
+            , time          = "Time" )
 
 model$pars$indvarying[7:14] = TRUE #drift and diffusion
 model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #drift
@@ -780,15 +778,11 @@ model$pars
 
 
 
-model_fit = ctStanFit(datalong = sherman_wide_person_centered, 
+model_fit = ctStanFit(datalong = df, 
                       ctstanmodel = model,
                       optimize = TRUE,
                       priors = TRUE,
                       cores=10
-                      # ,
-                      # optimcontrol=list(is=TRUE, 
-                      #                   finishsamples = 1000, 
-                      #                   isloopsize = 2000)
                       )
 
 # Summary of the model
