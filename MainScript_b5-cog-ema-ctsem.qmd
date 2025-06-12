@@ -45,9 +45,10 @@ library(furrr)
 library(tidyverse)
 library(flextable)
 library(officer)
+set.seed(420)
 ```
 
-```{r}
+```{r, eval = FALSE}
 availableCores()
 plan(multisession, workers = availableCores() - 1)
 nbrOfWorkers()
@@ -203,14 +204,16 @@ ema_df = ema_df |>
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
   rename(DateTime=Date) |> #Second, make sure the column more informative, and make sue 
   mutate(DateTime = ymd_hms(DateTime)) %>%
-  select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages. 
+  select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages.
   select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
   #Next we create two within-person, across all sessions columns:
   group_by(SID) |> 
   mutate(StartDate = min(DateTime, na.rm = TRUE),#get the start date for each participant
          BeepBoops = dense_rank(DateTime), #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
-         time = as.numeric(difftime(DateTime, StartDate, units = "hours"))) |> 
+         time = as.numeric(difftime(DateTime, StartDate, units = "hours")),
+         Session = 1:n()) |> #we want session to go up by 1 (i.e., practice)
   ungroup() |> 
+  select(-session) %>% #dont need this one
   #Now, for each person, for each day:
   group_by(SID,Day) |> 
   mutate(DailySessionNumber = dense_rank(Hour),
@@ -218,7 +221,7 @@ ema_df = ema_df |>
          HoursRelativeToNoon=ConvertToHoursRelativeToNoon(DateTime)) |>
   ungroup()
 
-ema_df
+#str(ema_df)
 
 ```
 
@@ -227,7 +230,6 @@ ema_df
 ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |> 
   #now we reorder the columns
   select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,HoursRelativeToNoon,Interrupt,everything()) 
-#remove duplicates
 ```
 
 ### Remove duplicates and filter for minimum observations
@@ -235,7 +237,14 @@ ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |>
 #before min obs
 ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
 
-#filter for minimum 25 observations
+
+ema_df <- ema_df %>%
+  group_by(SID, BeepBoops) %>%
+  slice(1) %>%
+  ungroup()
+
+
+#filter for minimum 20 observations
 ema_df <- ema_df %>%
   group_by(SID) %>%
   filter(n() >= 20) %>%
@@ -248,23 +257,24 @@ ema_df
 Prep:
 ```{r}
 ema_df_mi = data.frame(unclass(ema_df %>% 
-                                       select(SID, BeepBoops, A_cmpn:N_emoVol)))
+                                       select(SID, BeepBoops, A_cmpn:Dsm_medianRTc)))
 
 bounds_matrix = cbind(3:17, lower = 1, upper = 5)
-ema_df_mi
+
+ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
+  as_tibble() %>%
+  left_join(ema_df, by = c("SID", "BeepBoops")) %>%
+  select(-BeepBoops)
 ```
 Imputation:
 ```{r}
 #at some point we will want to save the output of this in a CSV and then just load that back in after  this cell so that the pipeline is deterministic.
+#cant we just set the seed
 
 # The outcomes were getting lost here, so I've split up the joining logic.
 to_add_to_mi_df = ema_df |> select(SID, Time, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
 
 
-ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
-  as_tibble() %>%
-  full_join(to_add_to_mi_df, by = c("SID", "BeepBoops")) %>%
-  select(-BeepBoops)
 
 #re-order the columns
 ema_df_mi = ema_df_mi |> select(SID,Time,DateTime:Interrupt,A_cmpn:N_emoVol,Nback_score:Dsm_medianRTc) 
@@ -277,6 +287,7 @@ ema_df_mi = ema_df_mi |> select(SID,Time,DateTime:Interrupt,A_cmpn:N_emoVol,Nbac
 PersonalityStates = ema_df_mi %>%
   select(A_cmpn:N_emoVol)
 describe(PersonalityStates) 
+
 ```
 ## Basline Data
 ### Item Reversals
