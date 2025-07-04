@@ -33,18 +33,26 @@ Notes:
 ```{r, include = FALSE}
 library(psych)
 library(kableExtra)
-#library(plyr)
-#library(mice) # Here we use mice for imputation... but we have enough data for an auto-encoder...
-library(Amelia) # Amelia rather than mice for continuity
-#library(rMIDAS)
-library(ctsem) 
+
+
 library(stringr)
-library(officer)
+
 library(future)
 library(furrr)
 library(tidyverse)
+
+library(Amelia) # Amelia rather than mice for continuity
+
 library(flextable)
 library(officer)
+
+library(ctsem) 
+library(rstan)
+library(tidybayes)
+library(furrr)
+library(plyr)
+library(tidyverse)
+
 set.seed(420)
 ```
 
@@ -146,16 +154,16 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-#knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
+knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+#knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
 
 ```{r}
-#ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
-ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
+ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
+#ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
 #colnames(ema_df)
 #head(ema_df)
 #ema_df |> arrange(SID)
@@ -164,11 +172,12 @@ ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-e
 ### Baseline Data
 
 ```{r}
-#baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
-baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
+baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
+#baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
 
 colnames(baseline_df)
 head(baseline_df)
+nrow(baseline_df)
 ```
 
 # Data Processing
@@ -198,6 +207,24 @@ ConvertToHoursRelativeToNoon <- function(dt) {
 #ConvertToHoursRelativeToNoon(testdate)
 ```
 
+### Checking for Duplicates
+Moved this up here because in the next section we are incrementing counters against rows, and duplicate rows
+might interfere with that process. 
+```{r}
+ema_df |> 
+  group_by_all()  |> 
+  filter(n()>1)  |> 
+  ungroup() #52 rows that are exact duplicates. SID 2628 has two pair, day 6 and 17, hour 23 for both
+
+
+```
+
+```{r}
+#ema_df |> filter(SID %in% c(45144, 80552)) #got these numbers from code below. Something is funny with the 'start time' column. 
+ema_df = ema_df  |> select(-StartTime) |> distinct()
+# StartTime looks like the hour of the first day of being in the study? Not sure what it's used for. We discard it before the main data processing function here. 
+```
+
 ### Main data transformations
 ```{r}
 ema_df = ema_df |> 
@@ -205,15 +232,14 @@ ema_df = ema_df |>
   rename(DateTime=Date) |> #Second, make sure the column more informative, and make sue 
   mutate(DateTime = ymd_hms(DateTime)) %>%
   select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages.
-  select(-StartTime) |> # This looks like the hour of the first day of being in the study? Not sure what it's used for. 
-  #Next we create two within-person, across all sessions columns:
+  #Next we create two within-person, across-all-sessions columns:
   group_by(SID) |> 
   mutate(StartDate = min(DateTime, na.rm = TRUE),#get the start date for each participant
          BeepBoops = dense_rank(DateTime), #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
          time = as.numeric(difftime(DateTime, StartDate, units = "hours")),
          Session = 1:n()) |> #we want session to go up by 1 (i.e., practice)
   ungroup() |> 
-  select(-session) %>% #dont need this one
+  select(-session) |>  #dont need this one. Note: originally in dataset from Emorie. 
   #Now, for each person, for each day:
   group_by(SID,Day) |> 
   mutate(DailySessionNumber = dense_rank(Hour),
@@ -232,17 +258,26 @@ ema_df = ema_df |>   rename_with(~ str_replace(.x, "^.", ~ toupper(.x))) |>
   select(SID,Time,DateTime,Day,Hour,Session,DailySessionNumber,BeepBoops,StartDate,DailyStartTime,HoursRelativeToNoon,Interrupt,everything()) 
 ```
 
-### Remove duplicates and filter for minimum observations
+### Check again for duplicates and filter for minimum observations
+
+
 ```{r}
-#before min obs
-ema_df = ema_df[!duplicated(ema_df), ] #check it out, non tidyverse that's more succinct and readable than tidyverse's version!
+nrow(ema_df) == 15185
+```
 
+```{r}
+#even with the deduplicated rows, the following code still loses 104 rows.
 
-ema_df <- ema_df %>%
-  group_by(SID, BeepBoops) %>%
-  slice(1) %>%
-  ungroup()
+#with the distinct after losing StartTime above, this code now returns 0 rows: 
+#ema_df |>
+#  group_by(SID,BeepBoops) |> 
+#  filter(n()>1) |> 
+#  ungroup() #the problem seems to be SID 45144	and SID 80552
 
+#ema_df = ema_df %>%
+#  group_by(SID, BeepBoops) %>%
+#  slice(1) %>%
+#  ungroup()
 
 #filter for minimum 20 observations
 ema_df <- ema_df %>%
@@ -251,35 +286,50 @@ ema_df <- ema_df %>%
   ungroup()
 
 ema_df
+nrow(ema_df) == 14780
+ema_df
 ```
 
 ### Imputation of Big Five Facets
-Prep:
+
+Here, in this cell, we do the preparation for the imputation. 
 ```{r}
+#edited this because we don't want to use the outcome variables in the imputation! Doing so induces a data leak from inputs to outputs / predictors to outcomes. That is, by using the outcomes as information about the predictors, we make the predictors 'more dependent' on the outcomes. 
+
+#Here we are just using the personality data for imputation, nothing else. 
 ema_df_mi = data.frame(unclass(ema_df %>% 
-                                       select(SID, BeepBoops, A_cmpn:Dsm_medianRTc)))
+                                       select(SID, BeepBoops, A_cmpn:N_emoVol)))#Dsm_medianRTc)))
 
 bounds_matrix = cbind(3:17, lower = 1, upper = 5)
 
-ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
-  as_tibble() %>%
-  left_join(ema_df, by = c("SID", "BeepBoops")) %>%
-  select(-BeepBoops)
+#Here are the other columns we'll want to add back to the imputed dataframe. 
+#thanks for catching the missing Time variable. 
+
+to_add_to_mi_df = ema_df |> select(SID, BeepBoops, DateTime, Day, Hour, Time, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
+
+#as coded, the left join here induces .x and .y suffixes to all imputed columns; this code also doesn't work well with the code in the next two sections. I've changed it below. 
+#ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
+#  as_tibble() %>%
+#  left_join(ema_df, by = c("SID", "BeepBoops")) %>% 
+#  select(-BeepBoops)
+
 ```
-Imputation:
+Imputation section:
 ```{r}
 #at some point we will want to save the output of this in a CSV and then just load that back in after  this cell so that the pipeline is deterministic.
 #cant we just set the seed
+#good point.
 
-# The outcomes were getting lost here, so I've split up the joining logic.
-to_add_to_mi_df = ema_df |> select(SID, Time, BeepBoops, DateTime, Day, Hour, Session, DailySessionNumber, DailyStartTime, HoursRelativeToNoon, Interrupt,Nback_score:Dsm_medianRTc)
-
-
+ema_df_mi = amelia(ema_df_mi, m = 1, ts = "BeepBoops", cs = "SID", bounds = bounds_matrix)$imputations[[1]] %>%
+  as_tibble() %>%
+  inner_join(to_add_to_mi_df, by = c("SID", "BeepBoops")) %>% #changed to inner join just to be extra safe, even though it's probably not necessary.
+  select(-BeepBoops)
 
 #re-order the columns
 ema_df_mi = ema_df_mi |> select(SID,Time,DateTime:Interrupt,A_cmpn:N_emoVol,Nback_score:Dsm_medianRTc) 
 
-
+ema_df_mi
+nrow(ema_df_mi) == 14780 #if this is true, no rows are lost via the inner join. 
 ```
 
 ```{r}
@@ -289,7 +339,21 @@ PersonalityStates = ema_df_mi %>%
 describe(PersonalityStates) 
 
 ```
-## Basline Data
+# Basline Data
+
+### Deduplicating baseline
+
+```{r}
+
+baseline_df |> 
+  group_by_all()  |> 
+  filter(n()>1)  |> 
+  ungroup()
+
+
+baseline_df = baseline_df  |> distinct()
+nrow(baseline_df) == 282 #(down from 286)
+```
 ### Item Reversals
 ```{r}
 #do the items need to be reverse scored?
@@ -365,7 +429,7 @@ Reversals =  list(
 ItemsToBeReversed =  names(Reversals)[unlist(Reversals)] #uses the boolean map above to select the column names which = TRUE
 
 baseline_df = baseline_df |> 
-  # 1. create *new* columns for the reversed items, suffixing them with "r"
+  # 1. create new columns for the reversed items, suffixing them with "r"
   mutate(across(all_of(ItemsToBeReversed),
                 ~ 6 - .x,
                 .names = "{.col}r")) %>%
@@ -375,27 +439,50 @@ baseline_df = baseline_df |>
 baseline_df |> select(contains("BFI_E")) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
+
 Join baseline variables we want
 
 ```{r}
 
-#relevant vars; there are also duplicates in baseline, same var values tho so we good
+#relevant vars; there are also duplicates in baseline, same variable values though so we are good
 
 baseline_to_join <- baseline_df %>% #this may be pedantic, but given that we aren't technically appending two dataframes, but rather joining one to another, I think this is an easier-to-remember-later variable name. 
   select(SID, demo_age, contains("BFI"))
+```
 
-baseline_to_join = baseline_to_join[!duplicated(baseline_to_join$SID), ]
-baseline_to_join 
+```{r}
+baseline_to_join |>  count(SID) %>% filter(n > 1)
+#SIDs 8649, 45144, 80552 have two rows each in baseline_to_join
+
+baseline_df |> 
+  filter(SID %in% c(8649, 45144, 80552)) |> 
+  arrange(SID) |> select(SID,StartDate,demo_YOB,demo_age,BFI_E_1,BFI_E_2)
+```
+
+```{r}
+#picking the first row of each group until Emorie gives further instruction: 
+baseline_to_join = baseline_to_join |> 
+  group_by(SID) |> 
+  slice(1) |> 
+  ungroup()
+```
+
+```{r}
+
 # Find SIDs in ema_df that are not in baseline_df
-#setdiff(ema_df$SID, baseline_append$SID)
+# there are more in the baseline because we are filtering out for >20 data points
+setdiff(ema_df$SID, baseline_to_join$SID)
+setdiff(baseline_to_join$SID,ema_df$SID)
+
 
 warning('This needs to be the imputed dataset:')
 df = ema_df_mi %>%
-  left_join(baseline_to_join, by = "SID")
+  inner_join(baseline_to_join, by = "SID") #switched to an inner join so that we just use all of the SIDs that are in both 
 #It's almost hard to believe that CT-SEM will take this kind of dataframe with so much redundant information. 
-df
-```
 
+nrow(df) < 14780 #14,780
+```
+The dataset has now been prepared and it is relatively free from duplicates, near duplicates, and induced rows via joins. 
 Naming conventions: A_cmpn,C_org etc. is from the EMA. BFI_E_1 etc. is from baseline
 
 
@@ -426,9 +513,6 @@ df |> select(unlist(unname(Facets))) |> cor(use='pairwise.complete.obs') |> roun
 Note: There are some no variance variables within person
 ```{r, warning = FALSE}
 esm_facets = df %>% select(SID, A_cmpn:N_emoVol)
-
-#im so sorry emorie
-# => i've attempted to save our souls with the version of the code below. I created a function to that calculates these omegas, and then the code map-applies that over the names of the facets
 ```
 
 ```{r}
@@ -480,7 +564,7 @@ ReliabilityTable |>
 ```{r}
 df = df |> 
   bind_cols( #glue together ema_df and whatever comes next along the vertical seam
-    map_dfc(Facets, ~rowMeans(ema_df[.x], na.rm = TRUE)) #map_dfc stands for "map data frame column-bind"
+    map_dfc(Facets, ~rowMeans(esm_facets[.x], na.rm = TRUE)) #map_dfc stands for "map data frame column-bind"
     #for each element in Facets (i.e. for each vector of column-name-strings), this gets those columns in ema_df, and takes the row means
   )
 df
@@ -536,9 +620,11 @@ EW note: this aren't finalized; once we get this sorted out we can either a) fee
 ```{r}
 CurrentDateString
 warning("These are descriptives for the EMA data. I assume we do no pooling within individuals first.")
+warning("this is just placeholder until we decide what we want here")
 
+warning("USING THE NON-IMPUTED DATEFRAME")
 BasicStatsEma = ema_df |> select(Nback_score:Dsm_medianRTc,
-                E_assert:Open) |> 
+                A_cmpn:O_crtvImag) |> 
                 psych::describe() |> 
                 as.data.frame() |> #psych helpfully returns a non-dataframe object
                 select(-c(vars,trimmed,mad,skew,kurtosis,se)) |> 
@@ -554,7 +640,7 @@ FormatTableToWord(BasicStatsEma,paste0("CT_CogB5_BasicStatsEMA_",CurrentDateStri
 
 ```{r}
 CorrTable = ema_df |> select(Nback_score:Dsm_medianRTc,
-                E_assert:Open) |> cor(use='pairwise.complete.obs') |> round(2)
+                A_cmpn:O_crtvImag) |> cor(use='pairwise.complete.obs') |> round(2)
 
 warning('Need to figure out how to format this for MS Word.')
 #Option 1: Outcomes w/ Outcomes, Pers with Pers.?
@@ -563,7 +649,171 @@ CorrTable
 ```
 
 
-# OLDER STUFF
+# CTSEM Models!
+
+## Testing
+
+
+Simple Test
+```{r}
+model=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion", "demo_age")
+            , TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait", "mu_cog"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+model$pars$indvarying[7:14] = TRUE #drift and diffusion
+model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #drift
+model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+model$pars$transform[21:22] = "1*param" #CINT
+
+model$pars
+
+
+
+model_fit = ctStanFit(datalong = df, 
+                      ctstanmodel = model,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=10
+                      )
+
+# Summary of the model
+modelsum = summary(model_fit, digits = 4, parmatrices=TRUE)
+modelpar = modelsum$parmatrices
+print(modelsum$parmatrices)
+
+```
+
+All 30 trait-cog pairs
+
+```{r}
+# Define traits and cogs
+traits = colnames(sc_df)[4:8] #change col numbers
+cogs = colnames(sc_df)[9:16] #change col numbers
+
+# Create all trait-cog pairs
+trait_cog_pairs = expand_grid(trait = traits, cog = cogs)
+
+fit_bivariate_model = function(trait, cog) {
+  message("Fitting model for:", trait, "and", cog, "\n")
+
+  tryCatch({
+    var_names = c(trait, cog)
+
+    model = ctModel(
+      type = 'stanct',
+      n.latent = 2,
+      latentNames = var_names,
+      n.manifest = 2,
+      manifestNames = var_names,
+      LAMBDA = diag(2),
+      
+      TDpred
+      
+      MANIFESTMEANS = 0,
+
+      CINT = matrix(c(
+        paste0("mu_", trait),
+        paste0("mu_", cog)
+      ), nrow = 2),
+
+      DRIFT = matrix(c(
+        paste0("beta_", trait),
+        paste0("beta_", trait, "_on_", cog),
+        paste0("beta_", cog, "_on_", trait),
+        paste0("beta_", cog)
+      ), nrow = 2, byrow = TRUE),
+
+      MANIFESTVAR = matrix(c(
+        paste0("mv_", trait), 0,
+        0, paste0("mv_", cog)), 
+        nrow = 2, byrow = TRUE),
+
+      DIFFUSION = matrix(c(
+        paste0("diff_", trait), 0,
+        0, #lower diagonal f's stuff up
+        paste0("diff_", cog)
+      ), nrow = 2, byrow = TRUE),
+
+      T0VAR = matrix(c(
+        paste0("t0var_", trait), 0,
+        0, paste0("t0var_", cog)), 
+        nrow = 2, byrow = TRUE),
+
+      id = "id",
+      time = "time"
+    )
+
+    model$pars$indvarying[7:14] = TRUE #drift and diffusion
+    
+    #make diffusion variances reasonable
+    model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10"
+    model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10"
+
+    data_sub = sherman_wide_person_centered %>%
+      select(id, time, all_of(c(trait, cog)))
+
+    fit = ctStanFit(datalong = data_sub, 
+                     ctstanmodel = model, 
+                     optimize = TRUE, 
+                     priors = TRUE,
+                     cores = 2, 
+                     verbose = 1
+                     )
+
+    fit_summary = summary(fit, digits = 4, parmatrices = TRUE)
+
+    tibble(
+      pair = paste0(trait, "_", cog),
+      model = list(model),
+      fit = list(fit),
+      summary = list(fit_summary)
+    )
+  }, error = function(e) {
+    cat("Error in model for: ", trait, "_", cog, "\n", e$message)  # Log the error
+    tibble(
+      pair = paste0(trait, "_", cog),
+      model = list(NA),
+      fit = list(NA),
+      summary = list(e$message)
+    )
+  })
+}
+
+# Parallel plan
+plan(multisession, workers = 4)
+
+# Fit all models
+ml_bivariate_results = future_pmap_dfr(trait_cog_pairs, fit_bivariate_model, .progress = TRUE)
+#check
+# ml_bivariate_results$summary[3][[1]]$parmatrices
+
+# Save results
+save(ml_bivariate_results, file = "Data/ml_bivariate_results.RData")
+
+# Return to sequential plan
+plan(sequential)
+
+q()
+
+```
+
+Extract parameters and find out which didn't converge and reestimate
+
+Yo we good - 5/14/25
+
+# ------- OLDER STUFF BELOW -------
 
 ##Code Emorie used to pull the data?
 
@@ -748,178 +998,7 @@ save(cog_ids_post, file = "Data/cog_ids_post.RData")
 <!-- save(bl_df, file = sprintf("data-pulls/b5-cog-ctsem/b5-cog-baseline-%s.RData", Sys.Date())) -->
 <!-- ``` -->
 
-## Ctsem shite
 
-```{r, include = FALSE}
-library(rstan)
-library(ctsem)
-library(tidybayes)
-library(furrr)
-library(plyr)
-library(tidyverse)
-```
-
-## Testing
-
-simple ass test
-
-```{r}
-model=ctModel(type='stanct'
-            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
-            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
-            , TIpredNames = c("BaselineExtraversion", "demo_age")
-            , TDpredNames = c("Interrupt", "Hour", "Session")
-            , LAMBDA=diag(2)
-            , MANIFESTMEANS = 0 #fix this for estimation 
-            , CINT = matrix(c("mu_trait", "mu_cog"), nrow = 2) #estimate this for equil calculation
-            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
-            #diagonal for estimation
-            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
-            , DIFFUSION = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE), 
-            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
-            , id            = "SID"
-            , time          = "Time" )
-
-model$pars$indvarying[7:14] = TRUE #drift and diffusion
-model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #drift
-model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
-model$pars$transform[21:22] = "1*param" #CINT
-
-model$pars
-
-
-
-model_fit = ctStanFit(datalong = df, 
-                      ctstanmodel = model,
-                      optimize = TRUE,
-                      priors = TRUE,
-                      cores=10
-                      )
-
-# Summary of the model
-modelsum = summary(model_fit, digits = 4, parmatrices=TRUE)
-modelpar = modelsum$parmatrices
-print(modelsum$parmatrices)
-
-```
-
-All 30 trait-cog pairs
-
-```{r}
-# Define traits and cogs
-traits = colnames(sc_df)[4:8] #change col numbers
-cogs = colnames(sc_df)[9:16] #change col numbers
-
-# Create all trait-cog pairs
-trait_cog_pairs = expand_grid(trait = traits, cog = cogs)
-
-fit_bivariate_model = function(trait, cog) {
-  message("Fitting model for:", trait, "and", cog, "\n")
-
-  tryCatch({
-    var_names = c(trait, cog)
-
-    model = ctModel(
-      type = 'stanct',
-      n.latent = 2,
-      latentNames = var_names,
-      n.manifest = 2,
-      manifestNames = var_names,
-      LAMBDA = diag(2),
-      
-      TDpred
-      
-      MANIFESTMEANS = 0,
-
-      CINT = matrix(c(
-        paste0("mu_", trait),
-        paste0("mu_", cog)
-      ), nrow = 2),
-
-      DRIFT = matrix(c(
-        paste0("beta_", trait),
-        paste0("beta_", trait, "_on_", cog),
-        paste0("beta_", cog, "_on_", trait),
-        paste0("beta_", cog)
-      ), nrow = 2, byrow = TRUE),
-
-      MANIFESTVAR = matrix(c(
-        paste0("mv_", trait), 0,
-        0, paste0("mv_", cog)), 
-        nrow = 2, byrow = TRUE),
-
-      DIFFUSION = matrix(c(
-        paste0("diff_", trait), 0,
-        0, #lower diagonal f's stuff up
-        paste0("diff_", cog)
-      ), nrow = 2, byrow = TRUE),
-
-      T0VAR = matrix(c(
-        paste0("t0var_", trait), 0,
-        0, paste0("t0var_", cog)), 
-        nrow = 2, byrow = TRUE),
-
-      id = "id",
-      time = "time"
-    )
-
-    model$pars$indvarying[7:14] = TRUE #drift and diffusion
-    
-    #make diffusion variances reasonable
-    model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10"
-    model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10"
-
-    data_sub = sherman_wide_person_centered %>%
-      select(id, time, all_of(c(trait, cog)))
-
-    fit = ctStanFit(datalong = data_sub, 
-                     ctstanmodel = model, 
-                     optimize = TRUE, 
-                     priors = TRUE,
-                     cores = 2, 
-                     verbose = 1
-                     )
-
-    fit_summary = summary(fit, digits = 4, parmatrices = TRUE)
-
-    tibble(
-      pair = paste0(trait, "_", cog),
-      model = list(model),
-      fit = list(fit),
-      summary = list(fit_summary)
-    )
-  }, error = function(e) {
-    cat("Error in model for: ", trait, "_", cog, "\n", e$message)  # Log the error
-    tibble(
-      pair = paste0(trait, "_", cog),
-      model = list(NA),
-      fit = list(NA),
-      summary = list(e$message)
-    )
-  })
-}
-
-# Parallel plan
-plan(multisession, workers = 4)
-
-# Fit all models
-ml_bivariate_results = future_pmap_dfr(trait_cog_pairs, fit_bivariate_model, .progress = TRUE)
-#check
-# ml_bivariate_results$summary[3][[1]]$parmatrices
-
-# Save results
-save(ml_bivariate_results, file = "Data/ml_bivariate_results.RData")
-
-# Return to sequential plan
-plan(sequential)
-
-q()
-
-```
-
-Extract parameters and find out which didn't converge and reestimate
-
-Yo we good - 5/14/25
 
 ```{r}
 # #load("Data/ml_bivariate_results.RData")
