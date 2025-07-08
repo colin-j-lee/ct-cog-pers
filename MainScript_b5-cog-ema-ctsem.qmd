@@ -154,16 +154,16 @@ FormatTableToWord = function(Table, OutputFileName, table_number = NULL, caption
 #uncomment one of these lines to set your own working directory
 #also, this and the next chunk are designed to have the data from Emorie in a top-level subfolder called "DataFromEmorie"
 
-knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
-#knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
+#knitr::opts_knit$set(root.dir = '~/Dropbox/Academia/Projects/CTSEMB5StatesCog') #this is for EW's machine
+knitr::opts_knit$set(root.dir = '~/Downloads/Projects/Cog States Continuous Time')
 #knitr::opts_knit$set(root.dir = '~/Desktop/BeckLabRAStuff/CTSEM/') #for HW's machine
 ```
 
 ### Ema Data
 
 ```{r}
-ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
-#ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
+#ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
+ema_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-ema-2025-05-07.csv") #CL
 #colnames(ema_df)
 #head(ema_df)
 #ema_df |> arrange(SID)
@@ -172,8 +172,8 @@ ema_df = read_csv("../DataFromEmorie/b5-cog-ema-2025-05-07.csv")  #EW
 ### Baseline Data
 
 ```{r}
-baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
-#baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
+#baseline_df = read_csv("../DataFromEmorie/b5-cog-baseline-2025-05-07.csv") #EW
+baseline_df = read_csv("~/Downloads/Projects/Cog States Continuous Time/Data/b5-cog-baseline-2025-05-07.csv") #CL
 
 colnames(baseline_df)
 head(baseline_df)
@@ -229,12 +229,12 @@ ema_df = ema_df  |> select(-StartTime) |> distinct()
 ```{r}
 ema_df = ema_df |> 
   arrange(SID,Date) |> #First, ensure that the dataframe is sorted properly (needed for the dense_rank functions)
-  rename(DateTime=Date) |> #Second, make sure the column more informative, and make sue 
+  dplyr::rename(DateTime = Date) |> #Second, make sure the column more informative, and make sue 
   mutate(DateTime = ymd_hms(DateTime)) %>%
   select(-c(A:O)) |> #Third, Remove the Domain Scores (averages of observed values) as we should impute first and then form the averages.
   #Next we create two within-person, across-all-sessions columns:
   group_by(SID) |> 
-  mutate(StartDate = min(DateTime, na.rm = TRUE),#get the start date for each participant
+  dplyr::mutate(StartDate = min(DateTime, na.rm = TRUE),#get the start date for each participant
          BeepBoops = dense_rank(DateTime), #probably should rename, but this is rank of each measurement occasion within each person. "Beep number" 
          time = as.numeric(difftime(DateTime, StartDate, units = "hours")),
          Session = 1:n()) |> #we want session to go up by 1 (i.e., practice)
@@ -581,6 +581,7 @@ df = df |> mutate(
 ```
 
 #Latent Variables or Composites for Big Five Traits?
+Composites me thinks - col
 
 ```{r}
 #going with composites for now
@@ -593,7 +594,7 @@ df  = df %>%
     BaselineOpenness= rowMeans(select(., contains("BFI_O")), na.rm = TRUE),
   ) |> select(-contains('BFI'))
 
-
+#save(df, file = "/Users/colinjlee/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
 ```
 #Exploratory Visualization
 
@@ -648,6 +649,19 @@ warning('Need to figure out how to format this for MS Word.')
 CorrTable 
 ```
 
+Start from here to debug
+```{r, include = FALSE}
+library(ctsem) 
+library(rstan)
+library(tidybayes)
+library(furrr)
+library(plyr)
+library(tidyverse)
+
+set.seed(420)
+
+load("~/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
+```
 
 # CTSEM Models!
 
@@ -656,6 +670,13 @@ CorrTable
 
 Simple Test
 ```{r}
+#subset the data so it doesnt take a million years
+
+sampled_ids <- sample(unique(df$SID), 30)
+test <- df %>% filter(SID %in% sampled_ids)
+psych::describe(test)
+
+#mod
 model=ctModel(type='stanct'
             , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
             , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
@@ -663,30 +684,32 @@ model=ctModel(type='stanct'
             , TDpredNames = c("Interrupt", "Hour", "Session")
             , LAMBDA=diag(2)
             , MANIFESTMEANS = 0 #fix this for estimation 
-            , CINT = matrix(c("mu_trait", "mu_cog"), nrow = 2) #estimate this for equil calculation
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
             , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
             #diagonal for estimation
             , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
-            , DIFFUSION = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE), 
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
             , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
             , id            = "SID"
             , time          = "Time" )
 
-model$pars$indvarying[7:14] = TRUE #drift and diffusion
-model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #drift
-model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
-model$pars$transform[21:22] = "1*param" #CINT
+model$pars$indvarying[7:10] = TRUE #drift ONLY
+#priors; i moved this up into model code
+# model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[21:22] = "1*param" #CINT
 
 model$pars
 
 
 
-model_fit = ctStanFit(datalong = df, 
+model_fit = ctStanFit(datalong = test, 
                       ctstanmodel = model,
                       optimize = TRUE,
                       priors = TRUE,
-                      cores=10
+                      cores=8
                       )
+plan(sequential)
 
 # Summary of the model
 modelsum = summary(model_fit, digits = 4, parmatrices=TRUE)

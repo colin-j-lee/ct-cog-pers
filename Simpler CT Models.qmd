@@ -1,0 +1,307 @@
+
+Start from here to debug
+```{r, include = FALSE}
+library(ctsem) 
+library(rstan)
+library(tidybayes)
+library(furrr)
+library(plyr)
+library(tidyverse)
+
+set.seed(420)
+
+load("~/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
+
+fulldf <- na.omit(df)
+```
+
+## Testing
+Bivariate only
+
+```{r}
+m1=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            # , TIpredNames = c("BaselineExtraversion", "demo_age")
+            # #, TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+#model$pars$indvarying[7:10] = TRUE #drift ONLY
+#priors; i moved this up into model code
+# model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[21:22] = "1*param" #CINT
+
+
+m1_fit = ctStanFit(datalong = fulldf, 
+                      ctstanmodel = m1,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=6
+                      )
+plan(sequential)
+
+# Summary of the model
+modelsum1 = summary(m1_fit, digits = 4, parmatrices=TRUE)
+print(modelsum1$parmatrices)
+
+save(m1, file = "m1.RData")
+```
+
+TI pred; doesnt work need to center
+
+```{r}
+#mod
+# m2=ctModel(type='stanct'
+#             , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+#             , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+#             , TIpredNames = c("BaselineExtraversion", "demo_age")
+#             #, TDpredNames = c("Interrupt", "Hour", "Session")
+#             , LAMBDA=diag(2)
+#             , MANIFESTMEANS = 0 #fix this for estimation 
+#             , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+#             , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+#             #diagonal for estimation
+#             , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+#             , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+#             , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+#             , id            = "SID"
+#             , time          = "Time" )
+# ctDocs()
+# #model$pars$indvarying[7:10] = TRUE #drift ONLY
+# #priors; i moved this up into model code
+# # model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# # model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# # model$pars$transform[21:22] = "1*param" #CINT
+# 
+# 
+# m2_fit = ctStanFit(datalong = fulldf, 
+#                       ctstanmodel = m2,
+#                       optimize = TRUE,
+#                       priors = TRUE,
+#                       cores=6
+#                       )
+# plan(sequential)
+# 
+# # Summary of the model
+# modelsum2 = summary(m2_fit, digits = 4, parmatrices=TRUE)
+# print(modelsum2$parmatrices)
+
+```
+
+centered TI
+```{r}
+#scale baseline trait
+fulldf_c <- fulldf %>%
+  mutate(BaselineExtraversion_c = as.numeric(scale(BaselineExtraversion)),
+         demo_age_c = as.numeric(scale(demo_age))
+  )
+
+#mod
+m2=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion_c", "demo_age_c")
+            #, TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+#model$pars$indvarying[7:10] = TRUE #drift ONLY
+#priors; i moved this up into model code
+# model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
+# model$pars$transform[21:22] = "1*param" #CINT
+
+
+m2_fit = ctStanFit(datalong = fulldf_c, 
+                      ctstanmodel = m2,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=6
+                      )
+plan(sequential)
+
+# Summary of the model
+modelsum2 = summary(m2_fit, digits = 4, parmatrices=TRUE)
+print(modelsum2$parmatrices)
+
+save(m2, file = "m2.RData")
+
+
+```
+
+
+TI and TD
+```{r}
+#mod
+m3=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion_c", "demo_age_c")
+            , TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+m3_fit = ctStanFit(datalong = fulldf_c, 
+                      ctstanmodel = m3,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=6
+                      )
+plan(sequential)
+
+# Summary of the model
+modelsum3 = summary(m3_fit, digits = 4, parmatrices=TRUE)
+print(modelsum3$parmatrices)
+
+save(m3, file = "m3.RData")
+
+
+```
+
+## Random effects
+Random effects bivariate
+```{r}
+m1_r=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            # , TIpredNames = c("BaselineExtraversion", "demo_age")
+            # #, TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+m1_r$pars$indvarying[7:10] = TRUE #drift ONLY
+
+
+m1_r_fit = ctStanFit(datalong = fulldf, 
+                      ctstanmodel = m1_r,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=8
+                      )
+plan(sequential)
+
+# Summary of the model
+model_r_sum = summary(m1_r_fit, digits = 4, parmatrices=TRUE)
+print(model_r_sum$parmatrices)
+
+save(m1_r_fit, file = "m1_r_fit.RData")
+```
+centered TI
+```{r}
+#scale baseline trait
+fulldf_c <- fulldf %>%
+  mutate(BaselineExtraversion_c = as.numeric(scale(BaselineExtraversion)),
+         demo_age_c = as.numeric(scale(demo_age))
+  )
+
+#mod
+m2_r=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion_c", "demo_age_c")
+            #, TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+m2_r$pars$indvarying[7:10] = TRUE #drift ONLY
+
+
+m2_r_fit = ctStanFit(datalong = fulldf_c, 
+                      ctstanmodel = m2_r,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=6
+                      )
+plan(sequential)
+
+# Summary of the model
+modelsum2 = summary(m2_r_fit, digits = 4, parmatrices=TRUE)
+print(modelsum2$parmatrices)
+
+save(m2_r_fit, file = "m2_r_fit.RData")
+
+
+```
+
+
+TI and TD
+```{r}
+#mod
+m3_r=ctModel(type='stanct'
+            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
+            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
+            , TIpredNames = c("BaselineExtraversion_c", "demo_age_c")
+            , TDpredNames = c("Interrupt", "Hour", "Session")
+            , LAMBDA=diag(2)
+            , MANIFESTMEANS = 0 #fix this for estimation 
+            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
+            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
+            #diagonal for estimation
+            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
+            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
+            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
+            , id            = "SID"
+            , time          = "Time" )
+
+m3_r$pars$indvarying[7:10] = TRUE #drift ONLY
+
+
+m3_r_fit = ctStanFit(datalong = fulldf_c, 
+                      ctstanmodel = m3_r,
+                      optimize = TRUE,
+                      priors = TRUE,
+                      cores=6
+                      )
+plan(sequential)
+
+# Summary of the model
+model_rsum3 = summary(m3_r_fit, digits = 4, parmatrices=TRUE)
+print(model_rsum3$parmatrices)
+
+save(m3_r_fit, file = "m3_r_fit.RData")
+
+
+```
+
