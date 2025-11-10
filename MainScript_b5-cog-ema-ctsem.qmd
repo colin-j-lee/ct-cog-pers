@@ -15,9 +15,9 @@ Checklist / ToDos
 -   [ ] Data Processing: figure out a strategy for the 'presentation names' of variables. Do we just rename E_scblty to Sociability and keep track of the E=>Soci. mapping? Or do we swap them out prior to making the tables?
 -   [x] Hourblock as the dense_rank of sessions within day. (DailySessionNumber might be a better name)
 -   [x] Add imputation (at least linear MICE imputation. What about MIDAS imputation? )
--   [ ] Add Time Invariant Predictors
--   [ ] And Time Dependent Predictors
--   [ ] need to merge with baseline data
+-   [x] Add Time Invariant Predictors
+-   [x] And Time Dependent Predictors
+-   [x] need to merge with baseline data
 
 Notes:
 0. I've moved a lot of what was previously in this script to the bottom under "OLDER STUFF", just so we have a pipeline that we can run top to bottom.    
@@ -509,11 +509,12 @@ ShortToLongNames = c(
 df |> select(unlist(unname(Facets))) |> cor(use='pairwise.complete.obs') |> round(2)
 ```
 
-# Multilevel Reliability
-Note: There are some no variance variables within person
 ```{r, warning = FALSE}
 esm_facets = df %>% select(SID, A_cmpn:N_emoVol)
 ```
+
+# Multilevel Reliability
+Note: There are some no variance variables within person
 
 ```{r}
 #I've kept the warnings unsuprressed just so we can see what happens here
@@ -577,8 +578,14 @@ warning("TRANSFORM REACTION TIMES / OUTLIER PROCESSING GOES HERE")
 df = df |> mutate(
     Nback_medianRTc = ifelse(Nback_medianRTc > 5000 | Nback_medianRTc == 0, NA, Nback_medianRTc),
     Vpa_medianRTc = ifelse(Vpa_medianRTc > 7500 | Vpa_medianRTc == 0, NA, Vpa_medianRTc),
-    Dsm_medianRTc = ifelse(Dsm_medianRTc > 5000 | Vpa_medianRTc == 0, NA, Dsm_medianRTc))
+    Dsm_medianRTc = ifelse(Dsm_medianRTc > 5000 | Vpa_medianRTc == 0, NA, Dsm_medianRTc)) %>%
+  mutate(
+    Nback_medianRTc_log = log(Nback_medianRTc + 1),
+    Vpa_medianRTc_log   = log(Vpa_medianRTc + 1),
+    Dsm_medianRTc_log   = log(Dsm_medianRTc + 1)
+  )
 ```
+
 
 #Latent Variables or Composites for Big Five Traits?
 Composites me thinks - col
@@ -594,8 +601,35 @@ df  = df %>%
     BaselineOpenness= rowMeans(select(., contains("BFI_O")), na.rm = TRUE),
   ) |> select(-contains('BFI'))
 
-#save(df, file = "/Users/colinjlee/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
 ```
+
+```{r}
+# Center time-dependent predictors within person
+df <- df %>%
+  group_by(SID) %>%
+  mutate(
+    Session_c = Session - median(Session, na.rm = TRUE),   # practice effects
+    Hour_c    = HoursRelativeToNoon,                       # already centered at noon
+    Interrupt_c = Interrupt                                # binary, already 0/1
+  ) %>%
+  ungroup()
+
+# Center time-invariant predictors
+df <- df %>%
+  mutate(
+    BaselineExtraversion_c    = BaselineExtraversion - mean(BaselineExtraversion, na.rm = TRUE),
+    BaselineAgreeableness_c   = BaselineAgreeableness - mean(BaselineAgreeableness, na.rm = TRUE),
+    BaselineConscientiousness_c = BaselineConscientiousness - mean(BaselineConscientiousness, na.rm = TRUE),
+    BaselineNeuroticism_c     = BaselineNeuroticism - mean(BaselineNeuroticism, na.rm = TRUE),
+    BaselineOpenness_c        = BaselineOpenness - mean(BaselineOpenness, na.rm = TRUE),
+    demo_age_c                = demo_age - mean(demo_age, na.rm = TRUE)              # midpoint centering
+  )
+
+
+save(df, file = "/Users/colinjlee/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
+
+```
+
 #Exploratory Visualization
 
 

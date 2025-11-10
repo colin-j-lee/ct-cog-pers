@@ -1,5 +1,3 @@
-
-Start from here to debug
 ```{r, include = FALSE}
 library(ctsem) 
 library(rstan)
@@ -10,51 +8,278 @@ library(tidyverse)
 
 set.seed(420)
 
-load("~/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
+load(file = "/Users/colinjlee/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
 
-fulldf <- na.omit(df)
+
+fulldf <- na.omit(df) %>%
+  group_by(SID) %>%
+  filter(n() > 20) %>%
+  ungroup()
+
+#subset relevant variables
+df_variables <- fulldf %>%
+  select(
+    SID, Time, 
+    Session, Hour_c, Interrupt, #tdpred
+    BaselineExtraversion, BaselineAgreeableness, BaselineConscientiousness,
+    BaselineNeuroticism, BaselineOpenness, demo_age, #tipreds
+    StateExtra, StateAgree, StateConsci, StateNeuro, StateOpen,
+    Nback_score, Vpa_score, Dsm_score, 
+    contains("log") #rt
+  )
 ```
+
+#scale state, trait, and age
+```{r}
+cog_df_c <- df_variables %>%
+  # Population-center baseline traits and age
+  mutate(across(
+    c(BaselineExtraversion, BaselineAgreeableness,
+      BaselineConscientiousness, BaselineNeuroticism,
+      BaselineOpenness, demo_age),
+    ~ .x - mean(.x, na.rm = TRUE),
+    .names = "{.col}_c"
+  )) %>%
+  
+  # Person-center state traits, cognitive scores, session, and RTs
+  group_by(SID) %>%
+  mutate(across(
+    c(StateExtra, StateAgree, StateConsci, StateNeuro, StateOpen,
+      Nback_score, Vpa_score, Dsm_score,
+      Nback_medianRTc_log, Vpa_medianRTc_log, Dsm_medianRTc_log),
+    ~ .x - mean(.x, na.rm = TRUE),
+    .names = "{.col}_pc"
+  )) %>%
+  ungroup() %>%
+  group_by(SID) %>%
+  mutate(Session_c = Session - median(Session)) %>%
+  ungroup()
+
+```
+
+
+All pairs
+```{r}
+# Personality states and cognitive outcome scores
+traits <- c("StateExtra", "StateAgree", "StateConsci", "StateNeuro", "StateOpen")
+cog_scores <- c("Nback_score", "Vpa_score", "Dsm_score")
+
+# Create trait–cognition pairs
+trait_cog_pairs <- expand_grid(trait = traits, cog = cog_scores)
+
+fit_bivariate_cog_model <- function(trait, cog) {
+  message("Fitting model for: ", trait, " and ", cog, "\n")
+
+  # Match baseline predictor to trait
+  baseline_trait <- switch(
+    trait,
+    StateExtra = "BaselineExtraversion",
+    StateAgree = "BaselineAgreeableness",
+    StateConsci = "BaselineConscientiousness",
+    StateNeuro = "BaselineNeuroticism",
+    StateOpen = "BaselineOpenness"
+  )
+
+  tryCatch({
+    var_names <- c(trait, cog)
+
+    # Define model
+    model <- ctModel(
+      type = 'stanct',
+      n.latent = 2,
+      latentNames = var_names,
+      n.manifest = 2,
+      manifestNames = var_names,
+      TIpredNames = c(baseline_trait, "demo_age"),
+      TDpredNames = c("Interrupt", "Session", "Hour_cos", "Hour_sin"),
+      LAMBDA = diag(2),
+      MANIFESTMEANS = 0,
+      CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2),
+      DRIFT = matrix(c(
+        "beta_trait",
+        "beta_trait_on_cog",
+        "beta_cog_on_trait",
+        "beta_cog"
+      ), nrow = 2, byrow = TRUE),
+      MANIFESTVAR = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE),
+      DIFFUSION = matrix(c(
+        "diff_trait | log1p_exp(param) + 1e-10", 0,
+        0, "diff_cog | log1p_exp(param) + 1e-10"
+      ), nrow = 2, byrow = TRUE),
+      T0VAR = matrix(c(
+        "var_trait | log1p_exp(param) + 1e-10", 0,
+        0, "var_cog | log1p_exp(param) + 1e-10"
+      ), nrow = 2, byrow = TRUE),
+      id = "SID",
+      time = "Time"
+    )
+
+    # Random effects for drift parameters
+    drift_params <- c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog")
+    model$pars$indvarying[model$pars$param %in% drift_params] <- TRUE
+
+    # Only allow TIpred effects on drift
+    model$pars[[paste0(baseline_trait, "_effect")]] <- FALSE
+    model$pars[[paste0(baseline_trait, "_effect")]][model$pars$param %in% drift_params] <- TRUE
+
+    model$pars$demo_age_effect <- FALSE
+    model$pars$demo_age_effect[model$pars$param %in% drift_params] <- TRUE
+
+    # Subset data
+    data_sub <- cog_df_c %>%
+      select(SID, Time, demo_age, Interrupt, Session, Hour_cos, Hour_sin,
+             all_of(baseline_trait), all_of(trait), all_of(cog))
+
+    # Fit
+    fit <- ctStanFit(
+      datalong = data_sub,
+      ctstanmodel = model,
+      optimize = TRUE,
+      priors = TRUE,
+      cores = 3,
+      verbose = 1
+    )
+
+    fit_summary <- summary(fit, digits = 3, parmatrices = TRUE)
+
+    tibble(
+      pair = paste0(trait, "_", cog),
+      baseline = baseline_trait,
+      model = list(model),
+      fit = list(fit),
+      summary = list(fit_summary)
+    )
+
+  }, error = function(e) {
+    cat("Error in model for: ", trait, "_", cog, "\n", e$message)
+    tibble(
+      pair = paste0(trait, "_", cog),
+      model = list(NA),
+      fit = list(NA),
+      summary = list(e$message)
+    )
+  })
+}
+
+# Parallel plan
+plan(multisession, workers = 4)
+
+# Fit all 15 models
+ml_bivariate_cog_score_results <- future_pmap_dfr(trait_cog_pairs, fit_bivariate_cog_model, .progress = TRUE)
+
+# Save results
+save(ml_bivariate_cog_score_results, file = "Data/ml_bivariate_cog_score_results.RData")
+
+# Return to sequential plan
+plan(sequential)
+
+```
+
+```{r}
+load("Data/ml_bivariate_cog_score_results.RData")
+
+ml_bivariate_summary <- ml_bivariate_cog_score_results %>%
+  select(pair, summary)
+
+# Extract the parmatrices from each summary
+ml_bivariate_parmatrices <- ml_bivariate_summary %>%
+  mutate(parmatrices = map(summary, ~ .x$parmatrices)) %>%
+  select(pair, parmatrices)
+# 
+# #Are any estimates hella big; this is  indicative of poor model convergence and I can separately estimate them
+# 
+par_check <- ml_bivariate_parmatrices %>%
+  mutate(any_mean_gt_20 = map_lgl(parmatrices, ~ any(.x$Mean > 20, na.rm = TRUE)))
+# 
+par_large_means <- par_check %>%
+  filter(any_mean_gt_20) %>%
+  mutate(high_mean_rows = map(parmatrices, ~ filter(.x, Mean > 10)))
+
+par_large_unnest <- par_large_means %>% unnest(high_mean_rows) %>%
+  mutate(Mean = round(Mean, 3))
+
+par_large_unnest
+```
+
 
 ## Testing
 Bivariate only
 
+notes: tipreds + interrupt ; no indvarying drift works - 10/29
+tipreds+interrupt + session
+
+only hour: fucked
+
+INDVARYING:
+no preds worked
+tipreds worked
+
+interuppt worked
+int and session worked
+
 ```{r}
-m1=ctModel(type='stanct'
-            , n.latent = 2, latentNames   = c("StateExtra", "Vpa_score")
-            , n.manifest = 2, manifestNames = c("StateExtra", "Vpa_score")
-            # , TIpredNames = c("BaselineExtraversion", "demo_age")
-            # #, TDpredNames = c("Interrupt", "Hour", "Session")
-            , LAMBDA=diag(2)
-            , MANIFESTMEANS = 0 #fix this for estimation 
-            , CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2) #estimate this for equil calculation
-            , DRIFT = matrix(c("beta_trait", "beta_trait_on_cog", "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = T)
-            #diagonal for estimation
-            , MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE)
-            , DIFFUSION = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), nrow = 2, byrow = TRUE), 
-            , T0VAR = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE) 
-            , id            = "SID"
-            , time          = "Time" )
+m1 <- ctModel(
+  type = 'stanct',
+  n.latent = 2, 
+  latentNames   = c("StateConsci_pc", "Vpa_score_pc"),
+  n.manifest    = 2, 
+  manifestNames = c("StateConsci_pc", "Vpa_score_pc"),
+  TIpredNames   = c("BaselineConscientiousness_c", "demo_age_c"),
+  TDpredNames   = c("Interrupt", "Session_c", "Hour_c"),
+  LAMBDA        = diag(2),
+  MANIFESTMEANS = 0,
+  CINT          = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2),
+  DRIFT         = matrix(c("beta_trait", "beta_trait_on_cog",
+                           "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = TRUE),
+  MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE),
+  DIFFUSION     = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE),
+  T0VAR         = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE),
+  id            = "SID",
+  time          = "Time"
+)
 
-#model$pars$indvarying[7:10] = TRUE #drift ONLY
-#priors; i moved this up into model code
-# model$pars$transform[11] = "log1p_exp(2 * param) + 1e-10" #diffusion
-# model$pars$transform[14] = "log1p_exp(2 * param) + 1e-10" #diffusion
-# model$pars$transform[21:22] = "1*param" #CINT
+# Make diffusion and T0VAR positive-definite via transforms
+m1$pars$transform[m1$pars$name %in% c("diff_trait", "diff_cog", "var_trait", "var_cog")] <- 
+  "log1p_exp(param) + 1e-10"
 
 
-m1_fit = ctStanFit(datalong = fulldf, 
+#random effects for drift
+names_to_set <- c("beta_trait",
+                  "beta_trait_on_cog",
+                  "beta_cog_on_trait",
+                  "beta_cog")
+
+#no tdpred for pers state, just cog state
+m1$pars$value[23:25] <- 0
+#random effects for drift
+m1$pars$indvarying[m1$pars$param %in% names_to_set] <- TRUE
+
+#only want tipred effects for drift
+
+
+m1$pars$BaselineConscientiousness_c_effect <- FALSE
+m1$pars$BaselineConscientiousness_c_effect[m1$pars$param %in% names_to_set] <- TRUE
+
+m1$pars$demo_age_c_effect <- FALSE
+m1$pars$demo_age_c_effect[m1$pars$param %in% names_to_set] <- TRUE
+
+
+#fit model
+m1_fit = ctStanFit(datalong = cog_df_c, 
                       ctstanmodel = m1,
                       optimize = TRUE,
                       priors = TRUE,
-                      cores=6
+                      cores=8
                       )
+
 plan(sequential)
+
 
 # Summary of the model
 modelsum1 = summary(m1_fit, digits = 4, parmatrices=TRUE)
 print(modelsum1$parmatrices)
 
-save(m1, file = "m1.RData")
+save(m1_fit, file = "m1_fit.RData")
 ```
 
 TI pred; doesnt work need to center
