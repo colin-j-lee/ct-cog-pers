@@ -8,7 +8,7 @@ library(tidyverse)
 
 set.seed(420)
 
-load(file = "/Users/colinjlee/Downloads/Projects/Cog States Continuous Time/Data/df.RData")
+load(file = "Data/df.RData")
 
 
 fulldf <- na.omit(df) %>%
@@ -31,6 +31,7 @@ df_variables <- fulldf %>%
 
 #scale state, trait, and age
 ```{r}
+colnames(cog_df_c)
 cog_df_c <- df_variables %>%
   # Population-center baseline traits and age
   mutate(across(
@@ -61,11 +62,11 @@ cog_df_c <- df_variables %>%
 All pairs
 ```{r}
 # Personality states and cognitive outcome scores
-traits <- c("StateExtra", "StateAgree", "StateConsci", "StateNeuro", "StateOpen")
-cog_scores <- c("Nback_score", "Vpa_score", "Dsm_score")
+traits <- c("StateExtra_pc", "StateAgree_pc", "StateConsci_pc", "StateNeuro_pc", "StateOpen_pc")
+cog_rt <- c("Nback_medianRTc_log_pc", "Vpa_medianRTc_log_pc", "Dsm_medianRTc_log_pc")
 
 # Create trait–cognition pairs
-trait_cog_pairs <- expand_grid(trait = traits, cog = cog_scores)
+trait_cog_pairs <- expand_grid(trait = traits, cog = cog_rt)
 
 fit_bivariate_cog_model <- function(trait, cog) {
   message("Fitting model for: ", trait, " and ", cog, "\n")
@@ -73,11 +74,11 @@ fit_bivariate_cog_model <- function(trait, cog) {
   # Match baseline predictor to trait
   baseline_trait <- switch(
     trait,
-    StateExtra = "BaselineExtraversion",
-    StateAgree = "BaselineAgreeableness",
-    StateConsci = "BaselineConscientiousness",
-    StateNeuro = "BaselineNeuroticism",
-    StateOpen = "BaselineOpenness"
+    StateExtra_pc = "BaselineExtraversion_c",
+    StateAgree_pc = "BaselineAgreeableness_c",
+    StateConsci_pc = "BaselineConscientiousness_c",
+    StateNeuro_pc = "BaselineNeuroticism_c",
+    StateOpen_pc = "BaselineOpenness_c"
   )
 
   tryCatch({
@@ -90,8 +91,8 @@ fit_bivariate_cog_model <- function(trait, cog) {
       latentNames = var_names,
       n.manifest = 2,
       manifestNames = var_names,
-      TIpredNames = c(baseline_trait, "demo_age"),
-      TDpredNames = c("Interrupt", "Session", "Hour_cos", "Hour_sin"),
+      TIpredNames = c(baseline_trait, "demo_age_c"),
+      TDpredNames = c("Interrupt", "Session_c", "Hour_c"),
       LAMBDA = diag(2),
       MANIFESTMEANS = 0,
       CINT = matrix(c("mu_trait | 1*param", "mu_cog | 1*param"), nrow = 2),
@@ -127,16 +128,16 @@ fit_bivariate_cog_model <- function(trait, cog) {
 
     # Subset data
     data_sub <- cog_df_c %>%
-      select(SID, Time, demo_age, Interrupt, Session, Hour_cos, Hour_sin,
+      select(SID, Time, demo_age_c, Interrupt, Session_c, Hour_c,
              all_of(baseline_trait), all_of(trait), all_of(cog))
 
     # Fit
     fit <- ctStanFit(
       datalong = data_sub,
       ctstanmodel = model,
-      optimize = TRUE,
+      optimize = FALSE,
       priors = TRUE,
-      cores = 3,
+      cores = 4,
       verbose = 1
     )
 
@@ -221,9 +222,9 @@ int and session worked
 m1 <- ctModel(
   type = 'stanct',
   n.latent = 2, 
-  latentNames   = c("StateConsci_pc", "Vpa_score_pc"),
+  latentNames   = c("StateConsci_pc", "Vpa_medianRTc_log"),
   n.manifest    = 2, 
-  manifestNames = c("StateConsci_pc", "Vpa_score_pc"),
+  manifestNames = c("StateConsci_pc", "Vpa_medianRTc_log"),
   TIpredNames   = c("BaselineConscientiousness_c", "demo_age_c"),
   TDpredNames   = c("Interrupt", "Session_c", "Hour_c"),
   LAMBDA        = diag(2),
@@ -232,7 +233,8 @@ m1 <- ctModel(
   DRIFT         = matrix(c("beta_trait", "beta_trait_on_cog",
                            "beta_cog_on_trait", "beta_cog"), nrow = 2, byrow = TRUE),
   MANIFESTVAR   = matrix(c("mv_trait", 0, 0, "mv_cog"), nrow = 2, byrow = TRUE),
-  DIFFUSION     = matrix(c("diff_trait", 0, 0, "diff_cog"), nrow = 2, byrow = TRUE),
+  DIFFUSION     = matrix(c("diff_trait | log1p_exp(2 * param) + 1e-10", 0, 0, "diff_cog | log1p_exp(2 * param) + 1e-10"), 
+                     nrow = 2, byrow = TRUE),  
   T0VAR         = matrix(c("var_trait", 0, 0, "var_cog"), nrow = 2, byrow = TRUE),
   id            = "SID",
   time          = "Time"
@@ -267,9 +269,9 @@ m1$pars$demo_age_c_effect[m1$pars$param %in% names_to_set] <- TRUE
 #fit model
 m1_fit = ctStanFit(datalong = cog_df_c, 
                       ctstanmodel = m1,
-                      optimize = TRUE,
+                      optimize = FALSE,
                       priors = TRUE,
-                      cores=8
+                      cores=12
                       )
 
 plan(sequential)
@@ -279,7 +281,7 @@ plan(sequential)
 modelsum1 = summary(m1_fit, digits = 4, parmatrices=TRUE)
 print(modelsum1$parmatrices)
 
-save(m1_fit, file = "m1_fit.RData")
+save(m1_fit, file = "Data/m1_fit.RData")
 ```
 
 TI pred; doesnt work need to center
